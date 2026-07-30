@@ -5,6 +5,14 @@ export type MarginAnnotationType =
   | "text"
   | "image";
 
+export const MARGIN_ANNOTATION_TYPES: readonly MarginAnnotationType[] = [
+  "highlight",
+  "underline",
+  "note",
+  "text",
+  "image",
+];
+
 export interface AnnotationPosition {
   pageIndex: number;
   rects?: number[][];

@@ -8,7 +8,7 @@ async function onStartup(): Promise<void> {
     promiseLike(Zotero.unlockPromise),
     promiseLike(Zotero.uiReadyPromise),
   ]);
-  addon.controller.start();
+  await addon.controller.start();
 }
 
 async function onMainWindowLoad(win: Window): Promise<void> {

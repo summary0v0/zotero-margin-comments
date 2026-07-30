@@ -5,14 +5,9 @@ import type {
   PageAnchor,
   ViewportLike,
 } from "./types";
+import { MARGIN_ANNOTATION_TYPES } from "./types";
 
-const SUPPORTED_TYPES = new Set<MarginAnnotationType>([
-  "highlight",
-  "underline",
-  "note",
-  "text",
-  "image",
-]);
+const SUPPORTED_TYPES = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
 
 export function isSupportedType(value: unknown): value is MarginAnnotationType {
   return typeof value === "string" && SUPPORTED_TYPES.has(value as MarginAnnotationType);

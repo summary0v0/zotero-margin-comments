@@ -1,0 +1,46 @@
+#zotero-prefpane-margincomments {
+  max-width: 720px;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-heading {
+  margin-block: 0 6px;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-description {
+  max-width: 620px;
+  margin-bottom: 8px;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  line-height: 1.5;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-type-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 4px 18px;
+  max-width: 560px;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-type-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 32px;
+  padding: 2px 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-type-row:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-type-row input {
+  margin: 0;
+  accent-color: #4a78c2;
+}
+
+@media (max-width: 620px) {
+  #zotero-prefpane-margincomments .zmc-prefs-type-list {
+    grid-template-columns: 1fr;
+  }
+}

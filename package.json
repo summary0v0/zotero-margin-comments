@@ -1,6 +1,6 @@
 {
   "name": "zotero-margin-comments",
-  "version": "0.7.4",
+  "version": "0.8.1",
   "private": true,
   "description": "Editable margin comment cards with leader lines for Zotero PDF annotations",
   "author": "Local Zotero Plugin",

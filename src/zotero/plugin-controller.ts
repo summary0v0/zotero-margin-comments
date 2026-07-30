@@ -1,13 +1,21 @@
 import { config } from "../../package.json";
+import {
+  MARGIN_ANNOTATION_TYPES,
+  type MarginAnnotationType,
+} from "../core/types";
 import { AnnotationStore } from "./annotation-store";
 import { ReaderSession } from "./reader-session";
 import { TOOLBAR_STYLES } from "./styles";
 
 const TOOLBAR_STYLE_ID = "zmc-toolbar-styles";
+const PREFERENCE_PANE_ROOT_ID = "zotero-prefpane-margincomments";
 
 export class PluginController {
   private readonly store = new AnnotationStore();
   private readonly sessions = new Map<any, ReaderSession>();
+  private readonly preferenceDocuments = new Set<Document>();
+  private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
+  private preferencePaneID?: string;
   private notifierID?: string;
   private enabled = true;
   private started = false;
@@ -45,10 +53,13 @@ export class PluginController {
     },
   };
 
-  start(): void {
+  async start(): Promise<void> {
     if (this.started) return;
     this.started = true;
     this.enabled = this.readEnabledPreference();
+    this.visibleTypes = this.readVisibleTypesPreference();
+
+    await this.registerPreferencePane();
 
     const readerApi = (Zotero as any).Reader;
     readerApi.registerEventListener(
@@ -88,20 +99,49 @@ export class PluginController {
 
     for (const session of this.sessions.values()) session.destroy();
     this.sessions.clear();
+    this.preferenceDocuments.clear();
+    if (this.preferencePaneID) {
+      try {
+        (Zotero as any).PreferencePanes?.unregister?.(this.preferencePaneID);
+      } catch (error) {
+        (Zotero as any).logError?.(error);
+      }
+      this.preferencePaneID = undefined;
+    }
     for (const reader of (Zotero as any).Reader?._readers ?? []) {
       this.removeToolbarUi(reader?._iframeWindow?.document);
     }
+  }
+
+  registerPreferencePaneWindow(win: Window): void {
+    const doc = win.document;
+    const root = doc.getElementById(PREFERENCE_PANE_ROOT_ID);
+    if (!root) return;
+    this.preferenceDocuments.add(doc);
+
+    root.querySelectorAll<HTMLInputElement>("[data-zmc-type]").forEach((checkbox) => {
+      const type = checkbox.dataset.zmcType as MarginAnnotationType | undefined;
+      if (!type || !MARGIN_ANNOTATION_TYPES.includes(type)) return;
+      checkbox.checked = this.visibleTypes.has(type);
+      if (checkbox.dataset.zmcBound === "true") return;
+      checkbox.dataset.zmcBound = "true";
+      checkbox.addEventListener("change", () => {
+        this.setTypeVisible(type, checkbox.checked);
+      });
+    });
   }
 
   private async ensureSession(reader: any): Promise<ReaderSession | undefined> {
     if (!this.started || !this.isPdfReader(reader)) return undefined;
     const existing = this.sessions.get(reader);
     if (existing) {
+      existing.setVisibleTypes(this.visibleTypes);
       await existing.start(this.enabled);
       return existing;
     }
 
     const session = new ReaderSession(reader, this.store, () => this.updateToolbarButtons());
+    session.setVisibleTypes(this.visibleTypes);
     this.sessions.set(reader, session);
     try {
       await session.start(this.enabled);
@@ -136,6 +176,62 @@ export class PluginController {
       return value === undefined ? true : Boolean(value);
     } catch {
       return true;
+    }
+  }
+
+  private readVisibleTypesPreference(): Set<MarginAnnotationType> {
+    const result = new Set<MarginAnnotationType>();
+    for (const type of MARGIN_ANNOTATION_TYPES) {
+      try {
+        const value = (Zotero.Prefs as any).get(
+          `${config.prefsPrefix}.types.${type}`,
+          true,
+        );
+        if (value === undefined || Boolean(value)) result.add(type);
+      } catch {
+        result.add(type);
+      }
+    }
+    return result;
+  }
+
+  private setTypeVisible(type: MarginAnnotationType, visible: boolean): void {
+    if (visible) {
+      this.visibleTypes.add(type);
+    } else {
+      this.visibleTypes.delete(type);
+    }
+    try {
+      (Zotero.Prefs as any).set(
+        `${config.prefsPrefix}.types.${type}`,
+        visible,
+        true,
+      );
+    } catch (error) {
+      (Zotero as any).logError?.(error);
+    }
+    for (const session of this.sessions.values()) {
+      session.setVisibleTypes(this.visibleTypes);
+    }
+    this.syncPreferenceCheckboxes();
+  }
+
+  private async registerPreferencePane(): Promise<void> {
+    const preferencePanes = (Zotero as any).PreferencePanes;
+    if (!preferencePanes?.register) return;
+    try {
+      this.preferencePaneID = await preferencePanes.register({
+        pluginID: config.addonID,
+        id: "margin-comments-preferences",
+        label: "页边批注",
+        src: `chrome://${config.addonRef}/content/preferences.xhtml`,
+        image: `chrome://${config.addonRef}/content/icons/margin-comments.svg`,
+        stylesheets: [
+          `chrome://${config.addonRef}/content/preferences.css`,
+        ],
+      });
+    } catch (error) {
+      (Zotero as any).logError?.(error);
     }
   }
 
@@ -187,6 +283,21 @@ export class PluginController {
     return button;
   }
 
+  private syncPreferenceCheckboxes(): void {
+    for (const doc of [...this.preferenceDocuments]) {
+      const root = doc.getElementById(PREFERENCE_PANE_ROOT_ID);
+      if (!root) {
+        this.preferenceDocuments.delete(doc);
+        continue;
+      }
+      root.querySelectorAll<HTMLInputElement>("[data-zmc-type]").forEach((checkbox) => {
+        const type = checkbox.dataset.zmcType as MarginAnnotationType | undefined;
+        if (!type) return;
+        checkbox.checked = this.visibleTypes.has(type);
+      });
+    }
+  }
+
   private installFallbackToolbarButton(reader: any): void {
     const doc = reader?._iframeWindow?.document as Document | undefined;
     if (!doc || doc.querySelector(".zmc-toolbar-toggle")) return;
@@ -225,7 +336,9 @@ export class PluginController {
 
   private removeToolbarUi(doc?: Document): void {
     if (!doc) return;
-    doc.querySelectorAll(".zmc-toolbar-toggle,.zmc-fallback-section").forEach((node) => node.remove());
+    doc.querySelectorAll(
+      ".zmc-toolbar-toggle,.zmc-fallback-section",
+    ).forEach((node) => node.remove());
     doc.getElementById(TOOLBAR_STYLE_ID)?.remove();
   }
 

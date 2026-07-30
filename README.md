@@ -19,6 +19,7 @@
 - `Ctrl/Cmd + Enter` 可立即保存；`Esc` 取消本次尚未保存的编辑。
 - 批注右键菜单提供“在页边显示/编辑评论”，可以为尚无评论的划线直接打开空卡片。
 - Reader 工具栏按钮可统一显示或隐藏页边批注。
+- 在 Zotero“编辑 → 设置 → 页边批注”中可分别显示或隐藏高亮、下划线、便签、文字批注以及图片/区域旁注；选择会持久保存，并立即应用到所有已打开的 PDF。
 - 缩放、旋转、窗口变化和页面重绘后自动重算引线位置。
 - 旁注挂载在 PDF.js 页面之外的独立覆盖层；缩放时即使 PDF.js 清空页面内部节点，也不会删除卡片和引线。
 - 缩放时复用现有卡片，并连续逐帧同步覆盖层位置，避免旁注消失或闪烁。
@@ -42,7 +43,7 @@ corepack pnpm run build
 corepack pnpm run verify:xpi
 ```
 
-本次生成的 XPI 位于 `build/margin-comments-0.7.4.xpi`。每次构建还会把带版本号的安装包复制到 `releases/`；后续构建清理 `build/` 时不会删除历史版本。压力测试结果见 `docs/performance.md`。
+本次生成的 XPI 位于 `build/margin-comments-0.8.1.xpi`。每次构建还会把带版本号的安装包复制到 `releases/`；后续构建清理 `build/` 时不会删除历史版本。压力测试结果见 `docs/performance.md`。
 
 ## 安装
 

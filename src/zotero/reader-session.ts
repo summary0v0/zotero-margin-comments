@@ -6,8 +6,18 @@ import {
   layoutCollapsibleMargin,
   type PositionedLayoutItem,
 } from "../core/margin-layout";
-import type { MarginAnnotation, PageAnchor } from "../core/types";
+import {
+  MARGIN_ANNOTATION_TYPES,
+  type MarginAnnotation,
+  type MarginAnnotationType,
+  type PageAnchor,
+} from "../core/types";
 import { AnnotationStore } from "./annotation-store";
+import {
+  readStoredComment,
+  renderStoredComment,
+  selectEditorContents,
+} from "./rich-text-editor";
 import {
   type PdfPageHandle,
   Zotero9ReaderAdapter,
@@ -33,9 +43,10 @@ interface CardRuntime {
   anchor: PageAnchor;
   card: HTMLElement;
   preview: HTMLButtonElement;
-  editor: HTMLTextAreaElement;
+  editor: HTMLElement;
   state: HTMLElement;
   originalValue: string;
+  currentValue: string;
   dirty: boolean;
   saving: boolean;
   measuredHeight?: number;
@@ -67,6 +78,7 @@ export class ReaderSession {
   private readonly forcedKeys = new Set<string>();
   private readonly mountedPages = new Map<number, MountedPage>();
   private readonly expandedMargins = new Set<string>();
+  private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
   private annotations: MarginAnnotation[] = [];
   private nativeVisibleIDs?: ReadonlySet<string>;
   private activeKey?: string;
@@ -117,6 +129,22 @@ export class ReaderSession {
       this.removeUi();
     }
     this.onStateChange();
+  }
+
+  setVisibleTypes(types: ReadonlySet<MarginAnnotationType>): void {
+    if (
+      this.visibleTypes.size === types.size
+      && [...types].every((type) => this.visibleTypes.has(type))
+    ) {
+      return;
+    }
+    this.visibleTypes = new Set(types);
+    if (!this.enabled || !this.adapterReady) return;
+    if (this.hasBlockingEditor()) {
+      this.pendingRefresh = true;
+      return;
+    }
+    this.render();
   }
 
   async reveal(keys: readonly string[]): Promise<void> {
@@ -190,8 +218,10 @@ export class ReaderSession {
     const viewer = this.adapter.viewerElement();
     this.ensureStyles(doc);
 
-    const displayable = this.annotations.filter((annotation) =>
-      shouldDisplayAnnotation(annotation, this.forcedKeys),
+    const displayable = this.annotations.filter(
+      (annotation) =>
+        this.visibleTypes.has(annotation.type)
+        && shouldDisplayAnnotation(annotation, this.forcedKeys),
     );
     const hasDisplayableAnnotations = displayable.length > 0;
     viewer.classList.toggle("zmc-viewer", hasDisplayableAnnotations);
@@ -366,11 +396,15 @@ export class ReaderSession {
 
       if (annotationChanged) {
         runtime.card.style.setProperty("--zmc-color", entry.annotation.color);
-        runtime.editor.readOnly = entry.annotation.readOnly;
-        runtime.editor.placeholder =
+        runtime.editor.contentEditable = String(!entry.annotation.readOnly);
+        runtime.editor.dataset.placeholder =
           entry.annotation.type === "note"
             ? "点击输入独立评论…"
             : "点击输入划线解释…";
+        runtime.editor.setAttribute(
+          "aria-readonly",
+          String(entry.annotation.readOnly),
+        );
         const annotationLabel = typeLabel(entry.annotation.type);
         const pageLabel = entry.annotation.pageLabel || handle.pageIndex + 1;
         runtime.preview.setAttribute(
@@ -383,8 +417,9 @@ export class ReaderSession {
         );
       }
 
-      if (!runtime.dirty && runtime.editor.value !== entry.annotation.comment) {
-        runtime.editor.value = entry.annotation.comment;
+      if (!runtime.dirty && runtime.currentValue !== entry.annotation.comment) {
+        runtime.currentValue = entry.annotation.comment;
+        this.renderComment(runtime.editor, entry.annotation.comment);
         runtime.originalValue = entry.annotation.comment;
         this.updatePreview(runtime);
         this.resizeEditor(runtime.editor);
@@ -448,7 +483,7 @@ export class ReaderSession {
   ): CardRuntime {
     const card = doc.createElement("article");
     const preview = doc.createElement("button");
-    const editor = doc.createElement("textarea");
+    const editor = doc.createElement("div");
     const footer = doc.createElement("footer");
     const state = doc.createElement("span");
 
@@ -462,12 +497,16 @@ export class ReaderSession {
       "aria-label",
       `${annotation.readOnly ? "查看" : "编辑"}${annotationLabel}，第 ${annotation.pageLabel || pageIndex + 1} 页`,
     );
-    editor.value = annotation.comment;
     editor.className = "zmc-card-editor zmc-editor-hidden";
-    editor.placeholder = annotation.type === "note" ? "点击输入独立评论…" : "点击输入划线解释…";
-    editor.readOnly = annotation.readOnly;
+    editor.contentEditable = String(!annotation.readOnly);
+    editor.dataset.placeholder = annotation.type === "note" ? "点击输入独立评论…" : "点击输入划线解释…";
     editor.spellcheck = false;
+    editor.dir = "auto";
+    editor.setAttribute("role", "textbox");
+    editor.setAttribute("aria-multiline", "true");
+    editor.setAttribute("aria-readonly", String(annotation.readOnly));
     editor.setAttribute("aria-label", `${annotationLabel}，第 ${annotation.pageLabel || pageIndex + 1} 页`);
+    this.renderComment(editor, annotation.comment);
     footer.className = "zmc-card-footer";
     state.className = "zmc-save-state";
     state.textContent = annotation.readOnly ? "只读" : "";
@@ -483,6 +522,7 @@ export class ReaderSession {
       editor,
       state,
       originalValue: annotation.comment,
+      currentValue: annotation.comment,
       dirty: false,
       saving: false,
     };
@@ -500,16 +540,59 @@ export class ReaderSession {
     preview.addEventListener("click", () => {
       if (!runtime.annotation.readOnly) this.openEditor(runtime);
     });
-    editor.addEventListener("focus", () =>
-      this.setActive(runtime.annotation.key),
-    );
+    editor.addEventListener("focus", () => {
+      this.setActive(runtime.annotation.key);
+      (doc as any).execCommand?.("defaultParagraphSeparator", false, "br");
+    });
+    // Keep text editing inside the card. Letting these events bubble to the
+    // card would call selectAnnotation(), which navigates the PDF on every
+    // drag start and collapses a mouse selection back to a single caret.
+    // Do not preventDefault(): native selection and the clipboard context
+    // menu still need their normal browser behaviour.
+    for (const eventName of [
+      "pointerdown",
+      "mousedown",
+      "click",
+      "dblclick",
+      "contextmenu",
+    ]) {
+      editor.addEventListener(eventName, (event) => event.stopPropagation());
+    }
+    const editorSelection = (): Selection | undefined => {
+      const selection = doc.defaultView?.getSelection();
+      if (
+        !selection
+        || selection.isCollapsed
+        || !selection.anchorNode
+        || !selection.focusNode
+        || !editor.contains(selection.anchorNode)
+        || !editor.contains(selection.focusNode)
+      ) {
+        return undefined;
+      }
+      return selection;
+    };
+    editor.addEventListener("copy", (event) => {
+      const selection = editorSelection();
+      if (!selection) return;
+      event.stopPropagation();
+      const text = selection.toString();
+      const copied = this.copyTextToClipboard(text);
+      if (event.clipboardData) {
+        event.clipboardData.setData("text/plain", text);
+      }
+      if (copied || event.clipboardData) event.preventDefault();
+    });
+    editor.addEventListener("cut", (event) => event.stopPropagation());
+    editor.addEventListener("paste", (event) => event.stopPropagation());
     editor.addEventListener("input", () => {
       if (runtime.annotation.readOnly) return;
-      runtime.dirty = true;
+      runtime.currentValue = this.readComment(editor);
+      runtime.dirty = runtime.currentValue !== runtime.originalValue;
       if (runtime.statusTimer) clearTimeout(runtime.statusTimer);
       runtime.statusTimer = undefined;
       runtime.state.dataset.error = "false";
-      runtime.state.textContent = "未保存";
+      runtime.state.textContent = runtime.dirty ? "未保存" : "";
       this.updatePreview(runtime);
       this.resizeEditor(editor);
       runtime.measuredHeight = undefined;
@@ -518,7 +601,39 @@ export class ReaderSession {
       this.queueSave(runtime);
     });
     editor.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
+      const modifier = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
+      const key = event.key.toLowerCase();
+      const formatCommand = event.key.toLowerCase() === "b"
+        ? "bold"
+        : event.key.toLowerCase() === "i"
+          ? "italic"
+          : undefined;
+      if (modifier && key === "a") {
+        event.preventDefault();
+        event.stopPropagation();
+        selectEditorContents(editor);
+      } else if (modifier && key === "c") {
+        event.preventDefault();
+        event.stopPropagation();
+        const selection = editorSelection();
+        if (selection && !this.copyTextToClipboard(selection.toString())) {
+          (doc as any).execCommand?.("copy", false, null);
+        }
+      } else if (modifier && key === "x") {
+        event.stopPropagation();
+        if (editorSelection() && (doc as any).execCommand?.("cut", false, null)) {
+          event.preventDefault();
+        }
+      } else if (modifier && ["v", "z", "y"].includes(key)) {
+        // Keep native paste/undo/redo, but do not let the PDF reader treat
+        // the shortcut as a document command.
+        event.stopPropagation();
+      } else if (modifier && formatCommand) {
+        event.preventDefault();
+        event.stopPropagation();
+        (doc as any).execCommand?.(formatCommand, false, null);
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      } else if (event.key === "Escape") {
         event.preventDefault();
         this.cancelEdit(runtime);
       } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -731,7 +846,7 @@ export class ReaderSession {
     runtime.timer = undefined;
     if (!runtime.dirty || runtime.saving || runtime.annotation.readOnly) return;
 
-    const value = runtime.editor.value;
+    const value = runtime.currentValue;
     runtime.saving = true;
     if (runtime.statusTimer) clearTimeout(runtime.statusTimer);
     runtime.statusTimer = undefined;
@@ -741,7 +856,7 @@ export class ReaderSession {
       await this.store.saveComment(runtime.annotation.itemID, value);
       runtime.originalValue = value;
       runtime.annotation.comment = value;
-      runtime.dirty = runtime.editor.value !== value;
+      runtime.dirty = runtime.currentValue !== value;
       this.updatePreview(runtime);
       runtime.state.textContent = runtime.dirty ? "有新修改" : "已保存";
       if (!runtime.dirty) {
@@ -762,7 +877,7 @@ export class ReaderSession {
       (Zotero as any).logError?.(error);
     } finally {
       runtime.saving = false;
-      if (runtime.dirty && runtime.editor.value !== value) this.queueSave(runtime);
+      if (runtime.dirty && runtime.currentValue !== value) this.queueSave(runtime);
       this.flushPendingRefresh();
     }
   }
@@ -770,7 +885,8 @@ export class ReaderSession {
   private cancelEdit(runtime: CardRuntime): void {
     if (runtime.timer) clearTimeout(runtime.timer);
     runtime.timer = undefined;
-    runtime.editor.value = runtime.originalValue;
+    runtime.currentValue = runtime.originalValue;
+    this.renderComment(runtime.editor, runtime.originalValue);
     runtime.annotation.comment = runtime.originalValue;
     runtime.dirty = false;
     runtime.state.dataset.error = "false";
@@ -797,7 +913,7 @@ export class ReaderSession {
     const mounted = this.mountedPages.get(runtime.annotation.position.pageIndex);
     if (mounted) this.layoutPage(mounted);
     runtime.editor.focus();
-    if (selectAll) runtime.editor.select();
+    if (selectAll) selectEditorContents(runtime.editor);
   }
 
   private closeEditor(runtime: CardRuntime, pageIndex: number): void {
@@ -809,9 +925,45 @@ export class ReaderSession {
   }
 
   private updatePreview(runtime: CardRuntime): void {
-    const value = runtime.editor.value;
-    runtime.preview.textContent = value || runtime.editor.placeholder;
+    const value = runtime.currentValue;
+    if (value) {
+      this.renderComment(runtime.preview, value);
+    } else {
+      runtime.preview.textContent = runtime.editor.dataset.placeholder ?? "";
+    }
     runtime.preview.classList.toggle("zmc-empty-preview", !value);
+  }
+
+  private renderComment(root: HTMLElement, value: string): void {
+    try {
+      renderStoredComment(root, value);
+    } catch (error) {
+      // A rich-text compatibility failure must not prevent every annotation
+      // on the page from mounting. Plain text remains editable and visible.
+      root.textContent = value;
+      (Zotero as any).logError?.(error);
+    }
+  }
+
+  private readComment(root: HTMLElement): string {
+    try {
+      return readStoredComment(root);
+    } catch (error) {
+      (Zotero as any).logError?.(error);
+      return root.textContent?.trim() ?? "";
+    }
+  }
+
+  private copyTextToClipboard(value: string): boolean {
+    try {
+      const copy = (Zotero as any).Utilities?.Internal?.copyTextToClipboard;
+      if (typeof copy !== "function") return false;
+      copy.call((Zotero as any).Utilities.Internal, value);
+      return true;
+    } catch (error) {
+      (Zotero as any).logError?.(error);
+      return false;
+    }
   }
 
   private measureRuntimeHeight(
@@ -824,7 +976,7 @@ export class ReaderSession {
       runtime.state.textContent ? "status" : "plain",
     ].join(":");
     if (runtime.measuredHeight === undefined || runtime.heightMode !== mode) {
-      runtime.measuredHeight = measureHeight(runtime.card, runtime.editor.value);
+      runtime.measuredHeight = measureHeight(runtime.card, runtime.currentValue);
       runtime.heightMode = mode;
     }
     return runtime.measuredHeight;
@@ -835,9 +987,9 @@ export class ReaderSession {
     if (mounted) this.layoutPage(mounted);
   }
 
-  private resizeEditor(editor: HTMLTextAreaElement): void {
+  private resizeEditor(editor: HTMLElement): void {
     editor.style.height = "0px";
-    const fallback = Math.min(156, Math.max(37, 24 + editor.value.split("\n").length * 18));
+    const fallback = Math.min(156, Math.max(37, 24 + (editor.textContent ?? "").split("\n").length * 18));
     const height = Math.min(156, Math.max(37, editor.scrollHeight || fallback));
     editor.style.height = `${height}px`;
   }

@@ -1,12 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { MarginAnnotation } from "../src/core/types";
+import {
+  MARGIN_ANNOTATION_TYPES,
+  type MarginAnnotation,
+} from "../src/core/types";
 import { ReaderSession } from "../src/zotero/reader-session";
 
 describe("ReaderSession", () => {
   beforeEach(() => {
     document.head.replaceChildren();
     document.body.replaceChildren();
-    vi.stubGlobal("Zotero", { logError: vi.fn() });
+    vi.stubGlobal("Zotero", {
+      logError: vi.fn(),
+      Utilities: {
+        Internal: {
+          copyTextToClipboard: vi.fn(),
+        },
+      },
+    });
   });
 
   afterEach(() => {
@@ -223,6 +233,15 @@ describe("ReaderSession", () => {
       "padding-inline",
     );
 
+    session.setVisibleTypes(new Set(["note"]));
+    expect(document.querySelectorAll(".zmc-card")).toHaveLength(1);
+    expect(document.querySelector('[data-annotation-key="NOTE0001"]')).not.toBeNull();
+    session.setVisibleTypes(new Set());
+    expect(document.querySelector(".zmc-page-overlay")).toBeNull();
+    expect(viewer.classList.contains("zmc-viewer")).toBe(false);
+    session.setVisibleTypes(new Set(MARGIN_ANNOTATION_TYPES));
+    expect(document.querySelectorAll(".zmc-card")).toHaveLength(4);
+
     const originalOverlay = document.querySelector(".zmc-page-overlay")!;
     const originalCard = document.querySelector(
       '.zmc-card[data-annotation-key="COMMENT1"]',
@@ -325,11 +344,46 @@ describe("ReaderSession", () => {
       '[data-annotation-key="COMMENT1"] .zmc-card-preview',
     )!;
     preview.click();
-    const editor = document.querySelector<HTMLTextAreaElement>(
-      '[data-annotation-key="COMMENT1"] textarea',
+    const editor = document.querySelector<HTMLElement>(
+      '[data-annotation-key="COMMENT1"] .zmc-card-editor',
     )!;
     expect(editor.classList.contains("zmc-editor-hidden")).toBe(false);
-    editor.value = "修改后的解释";
+    expect(editor.getAttribute("contenteditable")).toBe("true");
+    const navigateCallsBeforeEditorPointer = reader.navigate.mock.calls.length;
+    const selection = document.getSelection()!;
+    const range = document.createRange();
+    range.setStart(editor.firstChild!, 0);
+    range.setEnd(editor.firstChild!, 4);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editor.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    editor.dispatchEvent(new Event("mousedown", { bubbles: true }));
+    expect(reader.navigate).toHaveBeenCalledTimes(navigateCallsBeforeEditorPointer);
+    expect(selection.toString()).toHaveLength(4);
+    expect(document.getElementById("zmc-pdf-styles")?.textContent).toContain(
+      "user-select: text !important",
+    );
+    expect(document.getElementById("zmc-pdf-styles")?.textContent).toContain(
+      "background: Highlight !important",
+    );
+    const selectedText = selection.toString();
+    const clipboardData = { setData: vi.fn() };
+    const copyEvent = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(copyEvent, "clipboardData", { value: clipboardData });
+    editor.dispatchEvent(copyEvent);
+    expect(copyEvent.defaultPrevented).toBe(true);
+    expect(clipboardData.setData).toHaveBeenCalledWith("text/plain", selectedText);
+
+    const execCommand = vi.fn(() => true);
+    (document as any).execCommand = execCommand;
+    editor.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true }),
+    );
+    expect((Zotero as any).Utilities.Internal.copyTextToClipboard).toHaveBeenLastCalledWith(
+      selectedText,
+    );
+    expect(execCommand).not.toHaveBeenCalledWith("copy", false, null);
+    editor.textContent = "修改后的解释";
     editor.dispatchEvent(new Event("input", { bubbles: true }));
     editor.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true }),
@@ -338,10 +392,10 @@ describe("ReaderSession", () => {
     await Promise.resolve();
     expect(store.saveComment).toHaveBeenCalledWith(21, "修改后的解释");
 
-    const noteEditor = document.querySelector<HTMLTextAreaElement>(
-      '[data-annotation-key="NOTE0001"] textarea',
+    const noteEditor = document.querySelector<HTMLElement>(
+      '[data-annotation-key="NOTE0001"] .zmc-card-editor',
     )!;
-    noteEditor.value = "自动保存的独立评论";
+    noteEditor.textContent = "自动保存的独立评论";
     noteEditor.dispatchEvent(new Event("input", { bubbles: true }));
     await vi.advanceTimersByTimeAsync(700);
     expect(store.saveComment).toHaveBeenCalledWith(22, "自动保存的独立评论");

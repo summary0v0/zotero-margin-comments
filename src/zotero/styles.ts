@@ -235,7 +235,7 @@ export const PDF_STYLES = `
   color: color-mix(in srgb, CanvasText 48%, transparent);
 }
 
-.zmc-card textarea {
+.zmc-card-editor {
   display: block;
   box-sizing: border-box;
   width: 100%;
@@ -252,20 +252,47 @@ export const PDF_STYLES = `
   color: inherit;
   font: inherit;
   line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+  -moz-user-select: text !important;
+  user-select: text !important;
 }
 
-.zmc-card textarea:hover {
+.zmc-card-editor:hover {
   background: color-mix(in srgb, CanvasText 3%, transparent);
 }
 
-.zmc-card textarea:focus {
+.zmc-card-editor:focus {
   border-color: color-mix(in srgb, var(--zmc-color) 72%, #4a78c2);
   background: Canvas;
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--zmc-color) 18%, transparent);
 }
 
-.zmc-card textarea[readonly] {
+.zmc-card-editor[contenteditable="false"] {
   cursor: default;
+}
+
+.zmc-card-editor:empty::before {
+  content: attr(data-placeholder);
+  color: color-mix(in srgb, CanvasText 48%, transparent);
+  pointer-events: none;
+}
+
+/* PDF.js/Zotero selection rules can make a real DOM Range effectively
+   invisible. Keep the editor's native selection visibly distinct. */
+.zmc-card-editor::selection,
+.zmc-card-editor *::selection {
+  background: Highlight !important;
+  color: HighlightText !important;
+  text-shadow: none !important;
+}
+
+.zmc-card-editor::-moz-selection,
+.zmc-card-editor *::-moz-selection {
+  background: Highlight !important;
+  color: HighlightText !important;
+  text-shadow: none !important;
 }
 
 .zmc-card .zmc-preview-hidden,

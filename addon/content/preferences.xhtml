@@ -1,0 +1,54 @@
+<vbox id="zotero-prefpane-margincomments"
+      onload="Zotero.MarginComments.controller.registerPreferencePaneWindow(window)">
+  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域">
+    <label>
+      <html:h2 class="zmc-prefs-heading">旁注显示</html:h2>
+    </label>
+    <description class="zmc-prefs-description">
+      选择需要显示在 PDF 页面两侧的 Zotero 批注类型。修改会立即应用到所有已打开的 PDF。
+    </description>
+  </groupbox>
+
+  <groupbox>
+    <label>
+      <html:h2 class="zmc-prefs-heading">显示的批注类型</html:h2>
+    </label>
+    <html:div class="zmc-prefs-type-list">
+      <html:label class="zmc-prefs-type-row" for="zmc-prefs-type-highlight">
+        <html:input id="zmc-prefs-type-highlight"
+                    type="checkbox"
+                    data-zmc-type="highlight"
+                    preference="extensions.zotero.margincomments.types.highlight" />
+        <html:span>高亮</html:span>
+      </html:label>
+      <html:label class="zmc-prefs-type-row" for="zmc-prefs-type-underline">
+        <html:input id="zmc-prefs-type-underline"
+                    type="checkbox"
+                    data-zmc-type="underline"
+                    preference="extensions.zotero.margincomments.types.underline" />
+        <html:span>下划线</html:span>
+      </html:label>
+      <html:label class="zmc-prefs-type-row" for="zmc-prefs-type-note">
+        <html:input id="zmc-prefs-type-note"
+                    type="checkbox"
+                    data-zmc-type="note"
+                    preference="extensions.zotero.margincomments.types.note" />
+        <html:span>便签</html:span>
+      </html:label>
+      <html:label class="zmc-prefs-type-row" for="zmc-prefs-type-text">
+        <html:input id="zmc-prefs-type-text"
+                    type="checkbox"
+                    data-zmc-type="text"
+                    preference="extensions.zotero.margincomments.types.text" />
+        <html:span>文字批注</html:span>
+      </html:label>
+      <html:label class="zmc-prefs-type-row" for="zmc-prefs-type-image">
+        <html:input id="zmc-prefs-type-image"
+                    type="checkbox"
+                    data-zmc-type="image"
+                    preference="extensions.zotero.margincomments.types.image" />
+        <html:span>图片与区域</html:span>
+      </html:label>
+    </html:div>
+  </groupbox>
+</vbox>

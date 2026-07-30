@@ -24,6 +24,15 @@ if (-not ($normalized -contains 'content/scripts/margincomments.js')) {
 if (-not ($normalized -contains 'content/icons/margin-comments.svg')) {
   throw 'Plugin icon is missing'
 }
+if (-not ($normalized -contains 'content/preferences.xhtml')) {
+  throw 'Preference pane markup is missing'
+}
+if (-not ($normalized -contains 'content/preferences.css')) {
+  throw 'Preference pane stylesheet is missing'
+}
+if (-not ($normalized -contains 'prefs.js')) {
+  throw 'Default preferences are missing'
+}
 
 $manifestText = tar -xOf $xpi.FullName $manifestEntry
 $manifest = $manifestText | ConvertFrom-Json
