@@ -9,12 +9,14 @@ import { TOOLBAR_STYLES } from "./styles";
 
 const TOOLBAR_STYLE_ID = "zmc-toolbar-styles";
 const PREFERENCE_PANE_ROOT_ID = "zotero-prefpane-margincomments";
+const COMPACT_NOTE_SETTING_SELECTOR = '[data-zmc-setting="compact-note-icons"]';
 
 export class PluginController {
   private readonly store = new AnnotationStore();
   private readonly sessions = new Map<any, ReaderSession>();
   private readonly preferenceDocuments = new Set<Document>();
   private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
+  private compactNoteIcons = false;
   private preferencePaneID?: string;
   private notifierID?: string;
   private enabled = true;
@@ -58,6 +60,7 @@ export class PluginController {
     this.started = true;
     this.enabled = this.readEnabledPreference();
     this.visibleTypes = this.readVisibleTypesPreference();
+    this.compactNoteIcons = this.readCompactNoteIconsPreference();
 
     await this.registerPreferencePane();
 
@@ -129,6 +132,19 @@ export class PluginController {
         this.setTypeVisible(type, checkbox.checked);
       });
     });
+
+    const compactNoteCheckbox = root.querySelector<HTMLInputElement>(
+      COMPACT_NOTE_SETTING_SELECTOR,
+    );
+    if (compactNoteCheckbox) {
+      compactNoteCheckbox.checked = this.compactNoteIcons;
+      if (compactNoteCheckbox.dataset.zmcBound !== "true") {
+        compactNoteCheckbox.dataset.zmcBound = "true";
+        compactNoteCheckbox.addEventListener("change", () => {
+          this.setCompactNoteIcons(compactNoteCheckbox.checked);
+        });
+      }
+    }
   }
 
   private async ensureSession(reader: any): Promise<ReaderSession | undefined> {
@@ -136,12 +152,14 @@ export class PluginController {
     const existing = this.sessions.get(reader);
     if (existing) {
       existing.setVisibleTypes(this.visibleTypes);
+      existing.setCompactNoteIcons(this.compactNoteIcons);
       await existing.start(this.enabled);
       return existing;
     }
 
     const session = new ReaderSession(reader, this.store, () => this.updateToolbarButtons());
     session.setVisibleTypes(this.visibleTypes);
+    session.setCompactNoteIcons(this.compactNoteIcons);
     this.sessions.set(reader, session);
     try {
       await session.start(this.enabled);
@@ -195,6 +213,18 @@ export class PluginController {
     return result;
   }
 
+  private readCompactNoteIconsPreference(): boolean {
+    try {
+      const value = (Zotero.Prefs as any).get(
+        `${config.prefsPrefix}.compactNoteIcons`,
+        true,
+      );
+      return value === undefined ? false : Boolean(value);
+    } catch {
+      return false;
+    }
+  }
+
   private setTypeVisible(type: MarginAnnotationType, visible: boolean): void {
     if (visible) {
       this.visibleTypes.add(type);
@@ -212,6 +242,23 @@ export class PluginController {
     }
     for (const session of this.sessions.values()) {
       session.setVisibleTypes(this.visibleTypes);
+    }
+    this.syncPreferenceCheckboxes();
+  }
+
+  private setCompactNoteIcons(enabled: boolean): void {
+    this.compactNoteIcons = enabled;
+    try {
+      (Zotero.Prefs as any).set(
+        `${config.prefsPrefix}.compactNoteIcons`,
+        enabled,
+        true,
+      );
+    } catch (error) {
+      (Zotero as any).logError?.(error);
+    }
+    for (const session of this.sessions.values()) {
+      session.setCompactNoteIcons(enabled);
     }
     this.syncPreferenceCheckboxes();
   }
@@ -295,6 +342,10 @@ export class PluginController {
         if (!type) return;
         checkbox.checked = this.visibleTypes.has(type);
       });
+      const compactNoteCheckbox = root.querySelector<HTMLInputElement>(
+        COMPACT_NOTE_SETTING_SELECTOR,
+      );
+      if (compactNoteCheckbox) compactNoteCheckbox.checked = this.compactNoteIcons;
     }
   }
 

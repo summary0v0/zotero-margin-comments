@@ -1,5 +1,6 @@
 import {
   annotationAnchor,
+  compactNoteAnchor,
   shouldDisplayAnnotation,
 } from "../core/annotation-model";
 import {
@@ -83,6 +84,7 @@ export class ReaderSession {
   private nativeVisibleIDs?: ReadonlySet<string>;
   private activeKey?: string;
   private hoveredKey?: string;
+  private compactNoteIcons = false;
   private enabled = true;
   private started = false;
   private adapterReady = false;
@@ -147,6 +149,15 @@ export class ReaderSession {
     this.render();
   }
 
+  setCompactNoteIcons(enabled: boolean): void {
+    if (this.compactNoteIcons === enabled) return;
+    this.compactNoteIcons = enabled;
+    if (this.adapterReady) {
+      this.syncCompactNoteIcons();
+      if (this.enabled) this.render();
+    }
+  }
+
   async reveal(keys: readonly string[]): Promise<void> {
     keys.forEach((key) => this.forcedKeys.add(String(key)));
     if (!this.enabled) this.setEnabled(true);
@@ -172,6 +183,7 @@ export class ReaderSession {
 
     this.pendingRefresh = false;
     this.annotations = this.store.list(this.attachmentID);
+    if (this.adapterReady) this.syncCompactNoteIcons();
     if (this.enabled && this.adapterReady) this.render();
   }
 
@@ -336,7 +348,7 @@ export class ReaderSession {
     }
 
     for (const annotation of annotations) {
-      const anchor = this.annotationAnchorForHandle(annotation.position, handle);
+      const anchor = this.annotationAnchorForHandle(annotation, handle);
       if (!anchor) continue;
       const runtime = this.createCard(doc, annotation, anchor, handle.pageIndex);
       runtime.card.classList.toggle(
@@ -358,7 +370,7 @@ export class ReaderSession {
     const prepared = annotations
       .map((annotation) => ({
         annotation,
-        anchor: this.annotationAnchorForHandle(annotation.position, handle),
+        anchor: this.annotationAnchorForHandle(annotation, handle),
       }))
       .filter(
         (entry): entry is { annotation: MarginAnnotation; anchor: PageAnchor } =>
@@ -1023,6 +1035,15 @@ export class ReaderSession {
     }
   }
 
+  private syncCompactNoteIcons(): void {
+    this.adapter.setCompactNoteIcons(
+      this.compactNoteIcons,
+      this.annotations
+        .filter((annotation) => annotation.type === "note")
+        .map((annotation) => annotation.key),
+    );
+  }
+
   private hasBlockingEditor(): boolean {
     return this.cardRuntimes().some(
       (runtime) =>
@@ -1079,10 +1100,12 @@ export class ReaderSession {
   }
 
   private annotationAnchorForHandle(
-    position: MarginAnnotation["position"],
+    annotation: MarginAnnotation,
     handle: PdfPageHandle,
   ): PageAnchor | undefined {
-    const anchor = annotationAnchor(position, handle.viewport);
+    const anchor = this.compactNoteIcons && annotation.type === "note"
+      ? compactNoteAnchor(annotation.position, handle.viewport)
+      : annotationAnchor(annotation.position, handle.viewport);
     if (!anchor) return undefined;
     const { width, height } = this.pageDimensions(handle);
     const scaleX = handle.viewport.width > 0 ? width / handle.viewport.width : 1;

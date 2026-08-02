@@ -9,6 +9,16 @@ import { MARGIN_ANNOTATION_TYPES } from "./types";
 
 const SUPPORTED_TYPES = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
 
+// Zotero 9 stores note positions as a 22 x 22 PDF rectangle, while the
+// Canvas renderer draws a 24 x 24 icon from that rectangle's top-left corner.
+// Compact mode draws the icon at 14 x 14 and keeps the original 24 x 24
+// visual box centre fixed.
+export const ZOTERO_NOTE_POSITION_SIZE = 22;
+export const ZOTERO_NOTE_ICON_SIZE = 24;
+export const COMPACT_NOTE_ICON_SIZE = 14;
+export const COMPACT_NOTE_ICON_OFFSET =
+  (ZOTERO_NOTE_ICON_SIZE - COMPACT_NOTE_ICON_SIZE) / 2;
+
 export function isSupportedType(value: unknown): value is MarginAnnotationType {
   return typeof value === "string" && SUPPORTED_TYPES.has(value as MarginAnnotationType);
 }
@@ -73,6 +83,29 @@ export function annotationAnchor(
   const top = Math.min(...points.map(([, y]) => y));
   const bottom = Math.max(...points.map(([, y]) => y));
   return marginFacingAnchor(leftmost, rightmost, top, bottom, viewport);
+}
+
+export function compactNoteAnchor(
+  position: AnnotationPosition,
+  viewport: ViewportLike,
+): PageAnchor | undefined {
+  const rect = position.rects?.find((candidate) => candidate.length >= 4);
+  if (!rect) return annotationAnchor(position, viewport);
+
+  const [left, top, right, bottom] = convertRect(rect, viewport);
+  const unitX = (right - left) / ZOTERO_NOTE_POSITION_SIZE;
+  const unitY = (bottom - top) / ZOTERO_NOTE_POSITION_SIZE;
+  if (!(unitX > 0) || !(unitY > 0)) return annotationAnchor(position, viewport);
+
+  const compactLeft = left + COMPACT_NOTE_ICON_OFFSET * unitX;
+  const compactTop = top + COMPACT_NOTE_ICON_OFFSET * unitY;
+  return marginFacingAnchor(
+    compactLeft,
+    compactLeft + COMPACT_NOTE_ICON_SIZE * unitX,
+    compactTop,
+    compactTop + COMPACT_NOTE_ICON_SIZE * unitY,
+    viewport,
+  );
 }
 
 function convertRect(rect: number[], viewport: ViewportLike): number[] {

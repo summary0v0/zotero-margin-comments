@@ -129,7 +129,7 @@ describe("ReaderSession", () => {
         comment: "",
         color: "#2ea8e5",
         pageLabel: "1",
-        position: { pageIndex: 0, rects: [[300, 100, 320, 120]] },
+        position: { pageIndex: 0, rects: [[300, 98, 322, 120]] },
         readOnly: false,
       },
       {
@@ -158,16 +158,79 @@ describe("ReaderSession", () => {
       saveComment: vi.fn(async () => undefined),
     };
     const annotationHost = document.createElement("div");
+    annotationHost.id = "annotation-overlay";
     const annotationShadowRoot = annotationHost.attachShadow({ mode: "open" });
     const annotationRenderRoot = document.createElement("div");
     const nativeAnnotation = document.createElement("div");
     nativeAnnotation.dataset.annotationId = "COMMENT1";
-    annotationRenderRoot.append(nativeAnnotation);
+    const nativeNoteIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    nativeNoteIcon.dataset.annotationId = "NOTE0001";
+    annotationRenderRoot.append(nativeAnnotation, nativeNoteIcon);
     annotationShadowRoot.append(annotationRenderRoot);
     document.body.append(annotationHost);
     const nativeStateAnnotations = annotations.map((annotation) => ({
       id: annotation.key,
+      type: annotation.type,
+      position: annotation.position,
+      color: annotation.color,
+      readOnly: annotation.readOnly,
     }));
+    const nativeNote = nativeStateAnnotations.find(
+      (annotation) => annotation.id === "NOTE0001",
+    )!;
+    const noteContext = {
+      save: vi.fn(),
+      transform: vi.fn(),
+      restore: vi.fn(),
+    };
+    const rendererPrototype = {
+      _drawNote: vi.fn(function (this: any, annotation: any) {
+        this._drawNoteIcon(this._context, annotation.color);
+      }),
+    };
+    const renderer: any = Object.assign(Object.create(rendererPrototype), {
+      _context: noteContext,
+      _scale: 1,
+      _drawNoteIcon: vi.fn(),
+      _invalidateSignature: vi.fn(),
+      _p2v: (position: MarginAnnotation["position"]) => ({
+        ...position,
+        rects: position.rects?.map(([x1, y1, x2, y2]) => [
+          x1,
+          220 - y2,
+          x2,
+          220 - y1,
+        ]),
+      }),
+    });
+    const nativePage = {
+      _pageIndex: 0,
+      _pageRenderer: renderer,
+      _detailRenderer: undefined,
+      render: vi.fn(() => renderer._drawNote(nativeNote)),
+    };
+    const viewPrototype = {
+      getSelectableAnnotations(this: any, position: MarginAnnotation["position"]) {
+        const point = position.rects?.[0];
+        if (!point) return [];
+        const [left, bottom, right, top] = nativeNote.position.rects![0];
+        return point[0] >= left && point[0] <= right
+          && point[1] >= bottom && point[1] <= top
+          ? [nativeNote]
+          : [];
+      },
+      getSelectedAnnotationAction(_annotation: any, _position: any) {
+        return { type: "moveAndDrag" };
+      },
+    };
+    const primaryView: any = Object.assign(Object.create(viewPrototype), {
+      initializedPromise: Promise.resolve(),
+      _iframeWindow: window,
+      _iframeDocument: document,
+      _annotationRenderRootEl: annotationRenderRoot,
+      _pages: [nativePage],
+      getPageByIndex: (pageIndex: number) => pageIndex === 0 ? nativePage : undefined,
+    });
     const nativeUpdateState = vi.fn(function (
       this: any,
       state: Record<string, unknown>,
@@ -183,14 +246,9 @@ describe("ReaderSession", () => {
       },
       _updateState: nativeUpdateState,
       setSelectedAnnotations: vi.fn(),
-      _primaryView: {
-        initializedPromise: Promise.resolve(),
-        _iframeWindow: window,
-        _iframeDocument: document,
-        _annotationShadowRoot: annotationShadowRoot,
-        _annotationRenderRootEl: annotationRenderRoot,
-      },
+      _primaryView: primaryView,
     };
+    Object.assign(window, { _reader: internalReader });
     internalReader._annotationManager = {
       setFilter: vi.fn(async ({ hiddenIDs = [] }: { hiddenIDs?: string[] }) => {
         for (const annotation of nativeStateAnnotations) {
@@ -211,6 +269,7 @@ describe("ReaderSession", () => {
       itemID: 5,
       _initPromise: readerInit,
       _internalReader: internalReader,
+      _iframeWindow: window,
       navigate: vi.fn(),
     };
     const session = new ReaderSession(reader, store as any, vi.fn());
@@ -232,6 +291,49 @@ describe("ReaderSession", () => {
     expect(document.getElementById("zmc-pdf-styles")?.textContent).toContain(
       "padding-inline",
     );
+
+    const originalDrawNote = rendererPrototype._drawNote;
+    const originalSelectable = viewPrototype.getSelectableAnnotations;
+    const originalSelectedAction = viewPrototype.getSelectedAnnotationAction;
+    session.setCompactNoteIcons(true);
+    expect(rendererPrototype._drawNote).not.toBe(originalDrawNote);
+    expect(viewPrototype.getSelectableAnnotations).not.toBe(originalSelectable);
+    expect(viewPrototype.getSelectedAnnotationAction).not.toBe(originalSelectedAction);
+    expect(noteContext.transform).toHaveBeenLastCalledWith(
+      14 / 24,
+      0,
+      0,
+      14 / 24,
+      305,
+      105,
+    );
+    expect(
+      primaryView.getSelectableAnnotations({
+        pageIndex: 0,
+        rects: [[312, 108, 312, 108]],
+      }),
+    ).toEqual([nativeNote]);
+    expect(
+      primaryView.getSelectableAnnotations({
+        pageIndex: 0,
+        rects: [[301, 119, 301, 119]],
+      }),
+    ).toEqual([]);
+    expect(
+      primaryView.getSelectedAnnotationAction(nativeNote, {
+        pageIndex: 0,
+        rects: [[301, 119, 301, 119]],
+      }),
+    ).toBeNull();
+    expect(
+      document
+        .querySelector('.zmc-line[data-annotation-key="NOTE0001"]')
+        ?.getAttribute("points"),
+    ).toMatch(/^319,105 /);
+    session.setCompactNoteIcons(false);
+    expect(rendererPrototype._drawNote).toBe(originalDrawNote);
+    expect(viewPrototype.getSelectableAnnotations).toBe(originalSelectable);
+    expect(viewPrototype.getSelectedAnnotationAction).toBe(originalSelectedAction);
 
     session.setVisibleTypes(new Set(["note"]));
     expect(document.querySelectorAll(".zmc-card")).toHaveLength(1);

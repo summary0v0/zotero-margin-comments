@@ -39,8 +39,38 @@
   accent-color: #4a78c2;
 }
 
+#zotero-prefpane-margincomments .zmc-prefs-option-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  max-width: 620px;
+  padding: 5px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-option-row:hover {
+  background: color-mix(in srgb, currentColor 7%, transparent);
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-option-row input {
+  margin: 2px 0 0;
+  accent-color: #4a78c2;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-option-row span {
+  display: grid;
+  gap: 3px;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-option-row small {
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  line-height: 1.45;
+}
+
 @media (max-width: 620px) {
   #zotero-prefpane-margincomments .zmc-prefs-type-list {
     grid-template-columns: 1fr;
   }
+
 }

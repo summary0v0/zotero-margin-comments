@@ -13,6 +13,7 @@ declare namespace _ZoteroTypes {
       "types.note": boolean;
       "types.text": boolean;
       "types.image": boolean;
+      "compactNoteIcons": boolean;
     };
   }
 }

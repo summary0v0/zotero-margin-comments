@@ -23,7 +23,10 @@ describe("PluginController annotation type settings", () => {
 
   it("registers a preference pane and persists type changes immediately", async () => {
     const controller = new PluginController() as any;
-    const session = { setVisibleTypes: vi.fn() };
+    const session = {
+      setVisibleTypes: vi.fn(),
+      setCompactNoteIcons: vi.fn(),
+    };
     controller.sessions.set({}, session);
     await controller.registerPreferencePane();
 
@@ -44,6 +47,10 @@ describe("PluginController annotation type settings", () => {
       checkbox.dataset.zmcType = type;
       pane.append(checkbox);
     }
+    const compactNoteIcons = document.createElement("input");
+    compactNoteIcons.type = "checkbox";
+    compactNoteIcons.dataset.zmcSetting = "compact-note-icons";
+    pane.append(compactNoteIcons);
     document.body.append(pane);
     controller.registerPreferencePaneWindow(window);
 
@@ -69,5 +76,14 @@ describe("PluginController annotation type settings", () => {
     const visibleTypes = session.setVisibleTypes.mock.calls.at(-1)![0] as Set<string>;
     expect(visibleTypes.has("underline")).toBe(false);
     expect(visibleTypes.has("highlight")).toBe(true);
+
+    expect(compactNoteIcons.checked).toBe(false);
+    compactNoteIcons.click();
+    expect((Zotero as any).Prefs.set).toHaveBeenCalledWith(
+      "extensions.zotero.margincomments.compactNoteIcons",
+      true,
+      true,
+    );
+    expect(session.setCompactNoteIcons).toHaveBeenLastCalledWith(true);
   });
 });

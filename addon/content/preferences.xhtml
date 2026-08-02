@@ -1,6 +1,6 @@
 <vbox id="zotero-prefpane-margincomments"
       onload="Zotero.MarginComments.controller.registerPreferencePaneWindow(window)">
-  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域">
+  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,缩小">
     <label>
       <html:h2 class="zmc-prefs-heading">旁注显示</html:h2>
     </label>
@@ -51,4 +51,22 @@
       </html:label>
     </html:div>
   </groupbox>
+
+  <groupbox>
+    <label>
+      <html:h2 class="zmc-prefs-heading">阅读器外观</html:h2>
+    </label>
+    <html:label class="zmc-prefs-option-row" for="zmc-prefs-compact-note-icons">
+      <html:input id="zmc-prefs-compact-note-icons"
+                  type="checkbox"
+                  data-zmc-setting="compact-note-icons"
+                  preference="extensions.zotero.margincomments.compactNoteIcons" />
+      <html:span>
+        <html:strong>缩小便签图标</html:strong>
+        <html:small>缩小PDF页面原生便签图标到14px。</html:small>
+        <html:small>注：该功能有强版本依赖，如遇bug请关闭该选项。</html:small>
+      </html:span>
+    </html:label>
+  </groupbox>
+
 </vbox>

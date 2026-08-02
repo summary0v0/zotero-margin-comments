@@ -54,4 +54,5 @@ describe("AnnotationStore", () => {
     expect(item.annotationComment).toBe("新内容");
     expect(saveTx).toHaveBeenCalledOnce();
   });
+
 });

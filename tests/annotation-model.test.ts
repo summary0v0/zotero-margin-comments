@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   annotationAnchor,
+  compactNoteAnchor,
   parsePosition,
   shouldDisplayAnnotation,
 } from "../src/core/annotation-model";
@@ -59,6 +60,19 @@ describe("annotation model", () => {
         },
       ),
     ).toEqual({ x: 90, y: 30, side: "right" });
+  });
+
+  it("anchors compact notes to the centred 14-unit visual icon", () => {
+    const anchor = compactNoteAnchor(
+      { pageIndex: 0, rects: [[60, 58, 82, 80]] },
+      {
+        width: 100,
+        height: 100,
+        convertToViewportPoint: (x, y) => [x, 100 - y],
+      },
+    );
+
+    expect(anchor).toEqual({ x: 79, y: 25, side: "right" });
   });
 
   it("shows notes, comments, and explicitly revealed empty highlights", () => {
