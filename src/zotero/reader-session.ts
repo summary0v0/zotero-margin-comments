@@ -14,6 +14,7 @@ import {
   type PageAnchor,
 } from "../core/types";
 import { AnnotationStore } from "./annotation-store";
+import { renderMarkdownComment } from "./markdown-preview";
 import {
   readStoredComment,
   renderStoredComment,
@@ -43,7 +44,7 @@ interface CardRuntime {
   annotation: MarginAnnotation;
   anchor: PageAnchor;
   card: HTMLElement;
-  preview: HTMLButtonElement;
+  preview: HTMLDivElement;
   editor: HTMLElement;
   state: HTMLElement;
   originalValue: string;
@@ -85,6 +86,7 @@ export class ReaderSession {
   private activeKey?: string;
   private hoveredKey?: string;
   private compactNoteIcons = false;
+  private collapseNotes = true;
   private enabled = true;
   private started = false;
   private adapterReady = false;
@@ -156,6 +158,12 @@ export class ReaderSession {
       this.syncCompactNoteIcons();
       if (this.enabled) this.render();
     }
+  }
+
+  setCollapseNotes(enabled: boolean): void {
+    if (this.collapseNotes === enabled) return;
+    this.collapseNotes = enabled;
+    if (this.enabled && this.adapterReady) this.render();
   }
 
   async reveal(keys: readonly string[]): Promise<void> {
@@ -320,7 +328,8 @@ export class ReaderSession {
       right: this.createMarginColumn(doc, "right"),
     };
     overlay.className = "zmc-page-overlay";
-    overlay.classList.toggle("zmc-low-zoom", handle.scale < COLLAPSE_SCALE_THRESHOLD);
+    overlay.classList.toggle("zmc-no-collapse", !this.collapseNotes);
+    overlay.classList.toggle("zmc-low-zoom", this.collapseNotes && handle.scale < COLLAPSE_SCALE_THRESHOLD);
     lines.classList.add("zmc-line-layer");
     cards.className = "zmc-card-layer";
     cards.append(columns.left.root, columns.right.root);
@@ -357,7 +366,6 @@ export class ReaderSession {
       );
       mounted.runtimes.push(runtime);
       columns[anchor.side].content.append(runtime.card);
-      this.resizeEditor(runtime.editor);
     }
     this.layoutPage(mounted);
   }
@@ -391,8 +399,9 @@ export class ReaderSession {
     mounted.handle = handle;
     mounted.overlay.classList.toggle(
       "zmc-low-zoom",
-      handle.scale < COLLAPSE_SCALE_THRESHOLD,
+      this.collapseNotes && handle.scale < COLLAPSE_SCALE_THRESHOLD,
     );
+    mounted.overlay.classList.toggle("zmc-no-collapse", !this.collapseNotes);
     for (const runtime of mounted.runtimes) {
       const entry = byKey.get(runtime.annotation.key)!;
       const annotationChanged = runtime.annotation !== entry.annotation;
@@ -434,7 +443,6 @@ export class ReaderSession {
         this.renderComment(runtime.editor, entry.annotation.comment);
         runtime.originalValue = entry.annotation.comment;
         this.updatePreview(runtime);
-        this.resizeEditor(runtime.editor);
         runtime.measuredHeight = undefined;
       }
       if (wasReadOnly !== entry.annotation.readOnly) {
@@ -494,7 +502,7 @@ export class ReaderSession {
     pageIndex: number,
   ): CardRuntime {
     const card = doc.createElement("article");
-    const preview = doc.createElement("button");
+    const preview = doc.createElement("div");
     const editor = doc.createElement("div");
     const footer = doc.createElement("footer");
     const state = doc.createElement("span");
@@ -503,7 +511,8 @@ export class ReaderSession {
     card.dataset.annotationKey = annotation.key;
     card.style.setProperty("--zmc-color", annotation.color);
     const annotationLabel = typeLabel(annotation.type);
-    preview.type = "button";
+    preview.tabIndex = 0;
+    preview.setAttribute("role", "button");
     preview.className = "zmc-card-preview";
     preview.setAttribute(
       "aria-label",
@@ -549,8 +558,23 @@ export class ReaderSession {
       this.setActive(runtime.annotation.key);
       this.adapter.selectAnnotation(runtime.annotation.key);
     });
-    preview.addEventListener("click", () => {
+    preview.addEventListener("click", (event) => {
+      const link = (event.target as Element).closest?.("a[href]");
+      if (link && preview.contains(link)) {
+        event.preventDefault();
+        event.stopPropagation();
+        (Zotero as any).launchURL?.(link.getAttribute("href"));
+        return;
+      }
       if (!runtime.annotation.readOnly) this.openEditor(runtime);
+    });
+    preview.addEventListener("keydown", (event) => {
+      if (event.target !== preview) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!runtime.annotation.readOnly) this.openEditor(runtime);
+      }
     });
     editor.addEventListener("focus", () => {
       this.setActive(runtime.annotation.key);
@@ -606,7 +630,6 @@ export class ReaderSession {
       runtime.state.dataset.error = "false";
       runtime.state.textContent = runtime.dirty ? "未保存" : "";
       this.updatePreview(runtime);
-      this.resizeEditor(editor);
       runtime.measuredHeight = undefined;
       const mounted = this.mountedPages.get(pageIndex);
       if (mounted) this.layoutPage(mounted);
@@ -693,17 +716,17 @@ export class ReaderSession {
           padding: LAYOUT_PADDING,
           gap: CARD_GAP,
           summaryHeight: SUMMARY_HEIGHT,
-          expandedTopPadding: EXPANDED_TOP_PADDING,
-          expanded: requestedExpanded || editing,
+          expandedTopPadding: this.collapseNotes ? EXPANDED_TOP_PADDING : LAYOUT_PADDING,
+          expanded: !this.collapseNotes || requestedExpanded || editing,
         },
       );
-      const expanded = result.overflow && (requestedExpanded || editing);
+      const expanded = result.overflow && (!this.collapseNotes || requestedExpanded || editing);
       if (!result.overflow) this.expandedMargins.delete(stateKey);
       if (!expanded) column.scrollport.scrollTop = 0;
 
       column.root.classList.toggle("zmc-margin-expanded", expanded);
       column.root.classList.toggle("zmc-margin-overflow", result.overflow);
-      column.toggle.hidden = !result.overflow;
+      column.toggle.hidden = !this.collapseNotes || !result.overflow;
       column.toggle.setAttribute("aria-expanded", String(expanded));
       const toggleText = expanded
         ? "收起评论"
@@ -912,19 +935,23 @@ export class ReaderSession {
       }, 1200);
     }
     this.updatePreview(runtime);
-    this.resizeEditor(runtime.editor);
     runtime.editor.blur();
   }
 
   private openEditor(runtime: CardRuntime, selectAll = false): void {
     if (runtime.annotation.readOnly) return;
+    if (!runtime.card.classList.contains("zmc-editing")) {
+      // Markdown source can occupy fewer lines than its rendered preview.
+      // Keep that reading space when switching modes, then let the editable
+      // block grow naturally. Do not introduce a second scrollport here.
+      runtime.editor.style.minHeight = `${Math.max(37, runtime.preview.offsetHeight)}px`;
+    }
     runtime.card.classList.add("zmc-editing");
     runtime.preview.classList.add("zmc-preview-hidden");
     runtime.editor.classList.remove("zmc-editor-hidden");
-    this.resizeEditor(runtime.editor);
     const mounted = this.mountedPages.get(runtime.annotation.position.pageIndex);
     if (mounted) this.layoutPage(mounted);
-    runtime.editor.focus();
+    runtime.editor.focus({ preventScroll: true });
     if (selectAll) selectEditorContents(runtime.editor);
   }
 
@@ -932,6 +959,7 @@ export class ReaderSession {
     runtime.card.classList.remove("zmc-editing");
     runtime.editor.classList.add("zmc-editor-hidden");
     runtime.preview.classList.remove("zmc-preview-hidden");
+    runtime.editor.style.removeProperty("min-height");
     const mounted = this.mountedPages.get(pageIndex);
     if (mounted) this.layoutPage(mounted);
   }
@@ -939,7 +967,12 @@ export class ReaderSession {
   private updatePreview(runtime: CardRuntime): void {
     const value = runtime.currentValue;
     if (value) {
-      this.renderComment(runtime.preview, value);
+      try {
+        renderMarkdownComment(runtime.preview, value);
+      } catch (error) {
+        runtime.preview.textContent = value;
+        (Zotero as any).logError?.(error);
+      }
     } else {
       runtime.preview.textContent = runtime.editor.dataset.placeholder ?? "";
     }
@@ -984,6 +1017,7 @@ export class ReaderSession {
   ): number {
     const mode = [
       mounted.overlay.classList.contains("zmc-low-zoom") ? "low" : "normal",
+      this.collapseNotes ? "collapsed" : "full",
       runtime.card.classList.contains("zmc-editing") ? "editing" : "preview",
       runtime.state.textContent ? "status" : "plain",
     ].join(":");
@@ -997,13 +1031,6 @@ export class ReaderSession {
   private relayoutRuntime(runtime: CardRuntime): void {
     const mounted = this.mountedPages.get(runtime.annotation.position.pageIndex);
     if (mounted) this.layoutPage(mounted);
-  }
-
-  private resizeEditor(editor: HTMLElement): void {
-    editor.style.height = "0px";
-    const fallback = Math.min(156, Math.max(37, 24 + (editor.textContent ?? "").split("\n").length * 18));
-    const height = Math.min(156, Math.max(37, editor.scrollHeight || fallback));
-    editor.style.height = `${height}px`;
   }
 
   private setActive(key: string): void {

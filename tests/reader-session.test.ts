@@ -428,6 +428,19 @@ describe("ReaderSession", () => {
     overflowToggle.click();
     expect(leftColumn.classList.contains("zmc-margin-expanded")).toBe(false);
 
+    pdfViewer.currentScale = 0.75;
+    session.setCollapseNotes(false);
+    expect(document.querySelector(".zmc-no-collapse")).not.toBeNull();
+    expect(document.querySelector(".zmc-low-zoom")).toBeNull();
+    expect(leftColumn.querySelectorAll(".zmc-overflow-hidden")).toHaveLength(0);
+    expect(leftColumn.classList.contains("zmc-margin-expanded")).toBe(true);
+    expect(overflowToggle.hidden).toBe(true);
+    session.setCollapseNotes(true);
+    expect(document.querySelector(".zmc-no-collapse")).toBeNull();
+    expect(document.querySelector(".zmc-low-zoom")).not.toBeNull();
+    expect(leftColumn.querySelectorAll(".zmc-overflow-hidden")).toHaveLength(1);
+    expect(overflowToggle.hidden).toBe(false);
+
     const commentCard = document.querySelector<HTMLElement>(
       '.zmc-card[data-annotation-key="COMMENT1"]',
     )!;
@@ -442,7 +455,7 @@ describe("ReaderSession", () => {
     commentCard.dispatchEvent(new Event("pointerleave"));
     expect(nativeAnnotation.classList.contains("zmc-native-hover")).toBe(false);
 
-    const preview = document.querySelector<HTMLButtonElement>(
+    const preview = document.querySelector<HTMLDivElement>(
       '[data-annotation-key="COMMENT1"] .zmc-card-preview',
     )!;
     preview.click();
@@ -493,6 +506,50 @@ describe("ReaderSession", () => {
     await Promise.resolve();
     await Promise.resolve();
     expect(store.saveComment).toHaveBeenCalledWith(21, "修改后的解释");
+
+    const markdownSource = "## 研究方向\n- **VideoLLaMA3**：动态分辨率\n- InternVL\n\n相似度 $M_{ij}$：\n$$\nM_{ij}=\\operatorname{sim}(s_i,g_j)\n$$";
+    preview.click();
+    editor.textContent = markdownSource;
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    session.setCollapseNotes(false);
+    expect(editor.textContent).toBe(markdownSource);
+    expect(document.activeElement).toBe(editor);
+    expect(editor.classList.contains("zmc-editor-hidden")).toBe(false);
+    editor.blur();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(store.saveComment).toHaveBeenLastCalledWith(21, markdownSource);
+    expect(preview.querySelector("h2")?.textContent).toBe("研究方向");
+    expect(preview.querySelector("strong")?.textContent).toBe("VideoLLaMA3");
+    expect(preview.querySelectorAll("math")).toHaveLength(2);
+    expect(preview.querySelector(".zmc-math-error")).toBeNull();
+    expect(editor.querySelector("math")).toBeNull();
+    expect(preview.classList.contains("zmc-preview-hidden")).toBe(false);
+    // A long expanded Markdown preview must not shrink to the old 156px
+    // editor viewport, even if its source takes fewer lines to display.
+    Object.defineProperty(preview, "offsetHeight", { configurable: true, value: 840 });
+    const focusEditor = vi.spyOn(editor, "focus");
+    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(document.activeElement).toBe(editor);
+    expect(editor.textContent).toBe(markdownSource);
+    // Esc discards a formula draft and returns to the saved MathML preview.
+    editor.textContent = "$discarded$";
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(editor.textContent).toBe(markdownSource);
+    expect(preview.querySelectorAll("math")).toHaveLength(2);
+    preview.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(editor.style.minHeight).toBe("840px");
+    expect(editor.style.height).toBe("");
+    expect(focusEditor).toHaveBeenLastCalledWith({ preventScroll: true });
+    const longDraft = `${markdownSource}\n${"更多内容\n".repeat(60)}`.trim();
+    editor.textContent = longDraft;
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(editor.style.minHeight).toBe("840px");
+    expect(editor.style.height).toBe("");
+    editor.blur();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(store.saveComment).toHaveBeenLastCalledWith(21, longDraft);
+    expect(editor.style.minHeight).toBe("");
 
     const noteEditor = document.querySelector<HTMLElement>(
       '[data-annotation-key="NOTE0001"] .zmc-card-editor',

@@ -10,6 +10,7 @@ import { TOOLBAR_STYLES } from "./styles";
 const TOOLBAR_STYLE_ID = "zmc-toolbar-styles";
 const PREFERENCE_PANE_ROOT_ID = "zotero-prefpane-margincomments";
 const COMPACT_NOTE_SETTING_SELECTOR = '[data-zmc-setting="compact-note-icons"]';
+const COLLAPSE_NOTES_SETTING_SELECTOR = '[data-zmc-setting="collapse-notes"]';
 
 export class PluginController {
   private readonly store = new AnnotationStore();
@@ -17,6 +18,7 @@ export class PluginController {
   private readonly preferenceDocuments = new Set<Document>();
   private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
   private compactNoteIcons = false;
+  private collapseNotes = true;
   private preferencePaneID?: string;
   private notifierID?: string;
   private enabled = true;
@@ -61,6 +63,7 @@ export class PluginController {
     this.enabled = this.readEnabledPreference();
     this.visibleTypes = this.readVisibleTypesPreference();
     this.compactNoteIcons = this.readCompactNoteIconsPreference();
+    this.collapseNotes = this.readCollapseNotesPreference();
 
     await this.registerPreferencePane();
 
@@ -145,6 +148,18 @@ export class PluginController {
         });
       }
     }
+    const collapseNotesCheckbox = root.querySelector<HTMLInputElement>(
+      COLLAPSE_NOTES_SETTING_SELECTOR,
+    );
+    if (collapseNotesCheckbox) {
+      collapseNotesCheckbox.checked = this.collapseNotes;
+      if (collapseNotesCheckbox.dataset.zmcBound !== "true") {
+        collapseNotesCheckbox.dataset.zmcBound = "true";
+        collapseNotesCheckbox.addEventListener("change", () => {
+          this.setCollapseNotes(collapseNotesCheckbox.checked);
+        });
+      }
+    }
   }
 
   private async ensureSession(reader: any): Promise<ReaderSession | undefined> {
@@ -153,6 +168,7 @@ export class PluginController {
     if (existing) {
       existing.setVisibleTypes(this.visibleTypes);
       existing.setCompactNoteIcons(this.compactNoteIcons);
+      existing.setCollapseNotes(this.collapseNotes);
       await existing.start(this.enabled);
       return existing;
     }
@@ -160,6 +176,7 @@ export class PluginController {
     const session = new ReaderSession(reader, this.store, () => this.updateToolbarButtons());
     session.setVisibleTypes(this.visibleTypes);
     session.setCompactNoteIcons(this.compactNoteIcons);
+    session.setCollapseNotes(this.collapseNotes);
     this.sessions.set(reader, session);
     try {
       await session.start(this.enabled);
@@ -223,6 +240,30 @@ export class PluginController {
     } catch {
       return false;
     }
+  }
+
+  private readCollapseNotesPreference(): boolean {
+    try {
+      const value = (Zotero.Prefs as any).get(
+        `${config.prefsPrefix}.collapseNotes`, true,
+      );
+      return value === undefined ? true : Boolean(value);
+    } catch {
+      return true;
+    }
+  }
+
+  private setCollapseNotes(enabled: boolean): void {
+    this.collapseNotes = enabled;
+    try {
+      (Zotero.Prefs as any).set(
+        `${config.prefsPrefix}.collapseNotes`, enabled, true,
+      );
+    } catch (error) {
+      (Zotero as any).logError?.(error);
+    }
+    for (const session of this.sessions.values()) session.setCollapseNotes(enabled);
+    this.syncPreferenceCheckboxes();
   }
 
   private setTypeVisible(type: MarginAnnotationType, visible: boolean): void {
@@ -346,6 +387,10 @@ export class PluginController {
         COMPACT_NOTE_SETTING_SELECTOR,
       );
       if (compactNoteCheckbox) compactNoteCheckbox.checked = this.compactNoteIcons;
+      const collapseNotesCheckbox = root.querySelector<HTMLInputElement>(
+        COLLAPSE_NOTES_SETTING_SELECTOR,
+      );
+      if (collapseNotesCheckbox) collapseNotesCheckbox.checked = this.collapseNotes;
     }
   }
 

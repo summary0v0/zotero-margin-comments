@@ -235,16 +235,97 @@ export const PDF_STYLES = `
   color: color-mix(in srgb, CanvasText 48%, transparent);
 }
 
+.zmc-no-collapse .zmc-card-preview {
+  display: block;
+  max-height: none;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+}
+
+.zmc-markdown {
+  white-space: normal;
+}
+
+.zmc-markdown > :first-child { margin-top: 0; }
+.zmc-markdown > :last-child { margin-bottom: 0; }
+.zmc-markdown p { margin: 0 0 .55em; }
+.zmc-markdown h1, .zmc-markdown h2, .zmc-markdown h3,
+.zmc-markdown h4, .zmc-markdown h5, .zmc-markdown h6 {
+  margin: .75em 0 .35em;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.zmc-markdown h1 { font-size: 1.35em; }
+.zmc-markdown h2 { font-size: 1.22em; }
+.zmc-markdown h3 { font-size: 1.12em; }
+.zmc-markdown h4, .zmc-markdown h5, .zmc-markdown h6 { font-size: 1em; }
+.zmc-markdown ul, .zmc-markdown ol { margin: .4em 0; padding-inline-start: 1.5em; }
+.zmc-markdown li > p { margin: .25em 0; }
+.zmc-markdown blockquote {
+  margin: .5em 0;
+  padding-inline-start: .7em;
+  border-inline-start: 3px solid color-mix(in srgb, CanvasText 25%, transparent);
+  color: color-mix(in srgb, CanvasText 78%, Canvas);
+}
+.zmc-markdown code {
+  padding: .1em .25em;
+  border-radius: 3px;
+  background: color-mix(in srgb, CanvasText 7%, transparent);
+  font: .92em/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre-wrap;
+}
+.zmc-markdown pre { margin: .5em 0; white-space: pre-wrap; }
+.zmc-markdown pre code { display: block; padding: .5em; }
+.zmc-markdown a { color: LinkText; text-decoration: underline; cursor: pointer; }
+.zmc-markdown table {
+  display: block;
+  max-width: 100%;
+  margin: .5em 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: .95em;
+}
+.zmc-markdown th, .zmc-markdown td {
+  padding: .25em .4em;
+  border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+}
+.zmc-markdown hr { border: 0; border-top: 1px solid color-mix(in srgb, CanvasText 25%, transparent); }
+
+/* Native MathML needs no remote fonts or KaTeX HTML stylesheet. */
+.zmc-markdown .zmc-math { color: inherit; overflow-wrap: normal; }
+.zmc-markdown .zmc-math math { font-size: 1.08em; }
+.zmc-markdown .zmc-math-inline {
+  display: inline-block;
+  max-width: 100%;
+  padding: .1em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  vertical-align: middle;
+  scrollbar-width: thin;
+}
+.zmc-markdown .zmc-math-display {
+  display: block;
+  max-width: 100%;
+  margin: .55em 0;
+  padding: .2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.zmc-markdown .zmc-math-display math { width: max-content; min-width: 100%; margin: 0; }
+.zmc-markdown .zmc-math-error { white-space: pre-wrap; overflow-wrap: anywhere; }
+
 .zmc-card-editor {
   display: block;
   box-sizing: border-box;
   width: 100%;
   min-height: 37px;
-  max-height: 156px;
+  height: auto;
+  max-height: none;
   margin: 0;
   padding: 3px 4px;
   resize: none;
-  overflow-y: auto;
+  overflow: visible;
   border: 1px solid transparent;
   border-radius: 3px;
   outline: none;
@@ -308,11 +389,29 @@ export const PDF_STYLES = `
 
 .zmc-low-zoom .zmc-card:not(.zmc-editing) .zmc-card-preview {
   display: block;
-  max-height: 1.45em;
+  max-height: calc(1.45em + 8px);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.zmc-low-zoom .zmc-card-preview.zmc-markdown :not(.zmc-math, .zmc-math *) {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.zmc-low-zoom .zmc-card-preview .zmc-math {
+  max-height: 1em;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  vertical-align: middle;
+}
+.zmc-low-zoom .zmc-card-preview .zmc-math-display { display: inline-block; }
+.zmc-low-zoom .zmc-card-preview .zmc-math math { display: inline math; math-style: compact; }
 
 .zmc-card-footer {
   display: flex;

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PluginController } from "../src/zotero/plugin-controller";
+import { ReaderSession } from "../src/zotero/reader-session";
 
 describe("PluginController annotation type settings", () => {
   beforeEach(() => {
@@ -14,18 +15,23 @@ describe("PluginController annotation type settings", () => {
         register: vi.fn().mockResolvedValue("margin-comments-preferences"),
         unregister: vi.fn(),
       },
-      Reader: { _readers: [] },
+      Reader: { _readers: [], registerEventListener: vi.fn() },
+      Notifier: { registerObserver: vi.fn() },
       logError: vi.fn(),
     });
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
 
   it("registers a preference pane and persists type changes immediately", async () => {
     const controller = new PluginController() as any;
     const session = {
       setVisibleTypes: vi.fn(),
       setCompactNoteIcons: vi.fn(),
+      setCollapseNotes: vi.fn(),
     };
     controller.sessions.set({}, session);
     await controller.registerPreferencePane();
@@ -51,6 +57,10 @@ describe("PluginController annotation type settings", () => {
     compactNoteIcons.type = "checkbox";
     compactNoteIcons.dataset.zmcSetting = "compact-note-icons";
     pane.append(compactNoteIcons);
+    const collapseNotes = document.createElement("input");
+    collapseNotes.type = "checkbox";
+    collapseNotes.dataset.zmcSetting = "collapse-notes";
+    pane.append(collapseNotes);
     document.body.append(pane);
     controller.registerPreferencePaneWindow(window);
 
@@ -85,5 +95,32 @@ describe("PluginController annotation type settings", () => {
       true,
     );
     expect(session.setCompactNoteIcons).toHaveBeenLastCalledWith(true);
+
+    expect(collapseNotes.checked).toBe(true);
+    controller.registerPreferencePaneWindow(window);
+    collapseNotes.click();
+    expect((Zotero as any).Prefs.set).toHaveBeenCalledWith(
+      "extensions.zotero.margincomments.collapseNotes", false, true,
+    );
+    expect(session.setCollapseNotes).toHaveBeenCalledTimes(1);
+    expect(session.setCollapseNotes).toHaveBeenLastCalledWith(false);
+    collapseNotes.click();
+    expect(session.setCollapseNotes).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores the saved collapse setting and applies it to newly opened readers", async () => {
+    (Zotero as any).Prefs.get.mockImplementation((key: string) =>
+      key.endsWith(".collapseNotes") ? false : undefined,
+    );
+    vi.spyOn(ReaderSession.prototype, "start").mockResolvedValue(undefined);
+    const setCollapse = vi.spyOn(ReaderSession.prototype, "setCollapseNotes");
+    const controller = new PluginController() as any;
+    await controller.start();
+    expect(controller.collapseNotes).toBe(false);
+    await controller.ensureSession({ type: "pdf", itemID: 1 });
+    expect(setCollapse).toHaveBeenLastCalledWith(false);
+    expect(controller.readCollapseNotesPreference()).toBe(false);
+    (Zotero as any).Prefs.get.mockReturnValue(undefined);
+    expect(controller.readCollapseNotesPreference()).toBe(true);
   });
 });

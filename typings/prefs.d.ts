@@ -14,6 +14,7 @@ declare namespace _ZoteroTypes {
       "types.text": boolean;
       "types.image": boolean;
       "compactNoteIcons": boolean;
+      "collapseNotes": boolean;
     };
   }
 }

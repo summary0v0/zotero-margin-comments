@@ -5,3 +5,4 @@ pref("extensions.zotero.margincomments.types.note", true);
 pref("extensions.zotero.margincomments.types.text", true);
 pref("extensions.zotero.margincomments.types.image", true);
 pref("extensions.zotero.margincomments.compactNoteIcons", false);
+pref("extensions.zotero.margincomments.collapseNotes", true);

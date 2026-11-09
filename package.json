@@ -1,7 +1,8 @@
 {
   "name": "zotero-margin-comments",
-  "version": "0.8.6",
+  "version": "0.8.11",
   "private": true,
+  "packageManager": "pnpm@10.11.0",
   "description": "Editable margin comment cards with leader lines for Zotero PDF annotations",
   "author": "Local Zotero Plugin",
   "license": "MIT",
@@ -24,11 +25,16 @@
     "verify:xpi": "powershell -ExecutionPolicy Bypass -File scripts/verify-xpi.ps1"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.1.2",
     "@types/node": "^22.14.1",
     "happy-dom": "^18.0.1",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4",
     "zotero-plugin-scaffold": "^0.6.0",
     "zotero-types": "^3.1.9"
+  },
+  "dependencies": {
+    "katex": "0.19.1",
+    "markdown-it": "14.1.0"
   }
 }

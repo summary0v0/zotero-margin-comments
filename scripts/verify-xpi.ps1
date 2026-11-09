@@ -33,11 +33,22 @@ if (-not ($normalized -contains 'content/preferences.css')) {
 if (-not ($normalized -contains 'prefs.js')) {
   throw 'Default preferences are missing'
 }
+if (-not ($normalized -contains 'content/licenses/KaTeX.txt')) {
+  throw 'Bundled math renderer license is missing'
+}
 
 $manifestText = tar -xOf $xpi.FullName $manifestEntry
 $manifest = $manifestText | ConvertFrom-Json
 if ($manifest.version -ne $package.version) {
   throw "Unexpected manifest version $($manifest.version)"
+}
+$zoteroCompatibility = $manifest.applications.zotero
+if ($zoteroCompatibility.id -ne $package.config.addonID) {
+  throw 'Packaged Zotero addon ID does not match package.json'
+}
+if ($zoteroCompatibility.strict_min_version -ne '9.0' -or
+    $zoteroCompatibility.strict_max_version -ne '10.0.*') {
+  throw 'Packaged compatibility must include Zotero 9.0 through 10.0.*'
 }
 
 $archivedXpi = Join-Path 'releases' $expectedName
@@ -54,6 +65,7 @@ if ($buildHash -ne $archiveHash) {
   XPI = $xpi.FullName
   Archive = (Resolve-Path -LiteralPath $archivedXpi).Path
   Version = $manifest.version
+  Zotero = "$($zoteroCompatibility.strict_min_version) - $($zoteroCompatibility.strict_max_version)"
   SHA256 = $buildHash
   Entries = $entries.Count
 }

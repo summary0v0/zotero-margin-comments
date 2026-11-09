@@ -1,6 +1,6 @@
 <vbox id="zotero-prefpane-margincomments"
       onload="Zotero.MarginComments.controller.registerPreferencePaneWindow(window)">
-  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,缩小">
+  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,缩小,笔记,折叠,展开,Markdown">
     <label>
       <html:h2 class="zmc-prefs-heading">旁注显示</html:h2>
     </label>
@@ -56,6 +56,20 @@
     <label>
       <html:h2 class="zmc-prefs-heading">阅读器外观</html:h2>
     </label>
+    <html:label class="zmc-prefs-option-row" for="zmc-prefs-collapse-notes">
+      <html:input id="zmc-prefs-collapse-notes"
+                  type="checkbox"
+                  data-zmc-setting="collapse-notes"
+                  preference="extensions.zotero.margincomments.collapseNotes" />
+      <html:span>
+        <html:strong>自动折叠笔记</html:strong>
+        <html:small>开启后三行预览，低缩放时显示一行，并收起同页放不下的评论。</html:small>
+        <html:small>关闭后显示完整内容；超出页面高度时可在页边栏内滚动阅读。</html:small>
+      </html:span>
+    </html:label>
+    <description class="zmc-prefs-description">
+      笔记支持 Markdown 标题、加粗、列表、引用、代码、链接和表格；点击卡片编辑原文。
+    </description>
     <html:label class="zmc-prefs-option-row" for="zmc-prefs-compact-note-icons">
       <html:input id="zmc-prefs-compact-note-icons"
                   type="checkbox"

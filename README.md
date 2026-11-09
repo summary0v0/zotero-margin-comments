@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="https://github.com/XiaoDuComrade/zotero-margin-comments">
-    <img src="https://img.shields.io/badge/Zotero-9.0.x-CC2936?style=flat-square&logo=zotero&logoColor=white" alt="Zotero 9.0.x">
+    <img src="https://img.shields.io/badge/Zotero-9.0.x%20%7C%2010.0.x-CC2936?style=flat-square&logo=zotero&logoColor=white" alt="Zotero 9.0.x / 10.0.x">
   </a>
-  <img src="https://img.shields.io/badge/version-0.8.6-4A78C2?style=flat-square" alt="Version 0.8.6">
+  <img src="https://img.shields.io/badge/version-0.8.10-4A78C2?style=flat-square" alt="Version 0.8.10">
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.8">
   <a href="./LICENSE">
     <img src="https://img.shields.io/github/license/XiaoDuComrade/zotero-margin-comments?style=flat-square" alt="MIT License">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="./releases/margin-comments-0.8.6.xpi?raw=1"><strong>⬇️ 下载 0.8.6</strong></a>
+  <a href="./releases/margin-comments-0.8.10.xpi?raw=1"><strong>⬇️ 下载 0.8.10</strong></a>
   ·
   <a href="#安装">安装</a>
   ·
@@ -73,13 +73,14 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 <summary><strong>查看完整功能列表</strong></summary>
 
 - 左右两列分别进行纵向避让，卡片颜色继承原批注颜色。
-- 评论默认最多预览三行，超出部分以省略号结尾；点击后展开完整编辑器。
+- 可在设置中自由开启或关闭笔记折叠：开启时最多预览三行；关闭时显示完整内容，超出页高可在页边栏滚动。
+- 长笔记进入编辑后保留展开高度，编辑框随内容自然增长，超出页高时通过页边栏滚动。
 - 展开密集评论后，只绘制当前边栏视野内卡片的引线。
 - 点击卡片会选中并定位原批注；点击原批注会高亮对应卡片。
 - `Ctrl/Cmd + Enter` 立即保存，`Esc` 取消尚未保存的编辑。
 - 批注右键菜单提供“在页边显示/编辑评论”，可为尚无评论的划线创建空卡片。
 - Reader 工具栏按钮可以统一显示或隐藏页边批注。
-- PDF 缩小到 80% 以下时，卡片自动折叠为一行预览。
+- 开启笔记折叠时，PDF 缩小到 80% 以下会显示一行预览；关闭折叠后不受缩放影响。
 - 没有可显示旁注时，不保留额外侧栏或覆盖层，PDF 恢复 Zotero 原生宽度与缩放中心。
 - 卡片高度缓存、DOM 复用和分帧刷新用于降低密集批注、缩放及筛选恢复时的卡顿。
 
@@ -90,15 +91,18 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 打开 **Zotero → 编辑 → 设置 → 页边批注**：
 
 - 选择需要显示的批注类型：高亮、下划线、便签、文字、图片与区域。
+- 开启或关闭 **自动折叠笔记**，同时控制三行预览、低缩放一行预览和密集评论收起。默认开启；关闭后显示完整内容。
+- 笔记阅读状态自动渲染 Markdown：标题、加粗、斜体、列表、引用、代码、链接和表格；点击卡片编辑原文，保留 Markdown 标记。
+- 自动渲染 LaTeX 数学公式：行内 `$…$` / `\(...\)`，独立公式 `$$…$$` / `\[...\]`；支持分式、上下标、求和、矩阵和多行对齐，长公式可横向滚动。点击编辑、保存时仍保留公式原文。
 - 开启或关闭 **缩小便签图标**，将 PDF 页面原生便签图标缩小到 14px。
 - 设置会持久保存，并立即应用到所有已打开的 PDF。
 
 > [!WARNING]
-> “缩小便签图标”依赖 Zotero 9.0.x Reader 的内部 Canvas 实现。若 Zotero 更新后出现图标、点选范围或引线异常，请先关闭该选项。
+> “缩小便签图标”依赖 Zotero Reader 的内部 Canvas 实现。若 Zotero 更新后出现图标、点选范围或引线异常，请先关闭该选项。
 
 ## 安装
 
-1. 下载 [最新版 `margin-comments-0.8.6.xpi`](./releases/margin-comments-0.8.6.xpi?raw=1)。
+1. 下载 [最新版 `margin-comments-0.8.11.xpi`](./releases/margin-comments-0.8.11.xpi?raw=1)。
 2. 打开 **Zotero → 工具 → 插件**。
 3. 点击右上角齿轮，选择 **从文件安装插件**。
 4. 选择下载的 `.xpi` 文件，并按 Zotero 提示完成安装。
@@ -120,18 +124,41 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 | `Esc` | 取消尚未保存的编辑 |
 | 点击工具栏按钮 | 显示或隐藏全部页边批注 |
 
+### 数学公式
+
+在批注评论中直接输入 LaTeX，保存或失焦后自动渲染。例如：
+
+```markdown
+相似度为 $M_{ij}=\operatorname{sim}(s_i,g_j)$。
+
+$$
+P=\frac{N_{\text{matched-pred}}}{N_{\text{pred}}}
+\cdot\overline{\operatorname{sim}}\cdot L_f
+$$
+```
+
+- `\(...\)` 与 `\[...\]` 分别也可用于行内、独立公式。独立公式可以跨多行，建议分隔符单独占行。
+- 代码块和行内代码中的公式保持原文；普通美元价格可用 `\$` 明确转义。
+- 公式语法错误或命令不受支持时保留原文，其他内容继续正常显示。
+- KaTeX 随插件离线打包，输出由 Reader 原生显示的 MathML，无需联网或额外下载字体。公式命令支持范围见 [KaTeX 文档](https://katex.org/docs/supported)。
+
+0.8.11 修复了 `\overline{\operatorname{sim}}` 的横线被排到字母右侧的问题，同时处理帽子、下划线和分式中同类的函数名分组错误。已有笔记的公式原文无需修改。
+
 ## 兼容性
 
 | 项目 | 当前支持情况 |
 | --- | --- |
-| Zotero | `9.0.x` |
-| 已验证版本 | `9.0.6` |
+| 安装兼容范围 | Zotero `9.0.x` / `10.0.x` |
+| 历史验收版本 | `9.0.6` |
+| Zotero 10 核对 | 本机 `10.0.8` 的应用文件与关键接口已核对，尚未进行安装后功能验收 |
 | 文档类型 | PDF |
 | 界面 | 浅色 / 深色 |
 | 数据存储 | Zotero 原批注 |
 
 > [!IMPORTANT]
 > 工具栏和右键菜单使用 Zotero Reader 插件事件；页内坐标、Canvas 便签图标和命中区域涉及 Reader 内部实现。Zotero 大版本更新后可能需要重新适配。
+
+0.8.8 修复了 0.8.7 安装包仅声明兼容 Zotero 9，导致 Zotero 10 拒绝安装的问题。核对范围与依据见 [Zotero 10 兼容性记录](./docs/zotero-10-compatibility.md)。
 
 ## 开发与构建
 
@@ -146,7 +173,7 @@ corepack pnpm run build
 corepack pnpm run verify:xpi
 ```
 
-构建结果位于 `build/margin-comments-0.8.6.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
+构建结果位于 `build/margin-comments-0.8.11.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
 
 - [人工验收清单](./docs/manual-smoke-test.md)
 - [性能与压力测试](./docs/performance.md)
