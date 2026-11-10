@@ -1,8 +1,7 @@
 export const PDF_STYLES = `
 .pdfViewer.zmc-viewer {
-  --zmc-gutter-width: 304px;
-  padding-inline-start: calc(18px + var(--zmc-gutter-width)) !important;
-  padding-inline-end: calc(18px + var(--zmc-gutter-width)) !important;
+  padding-inline-start: calc(18px + var(--zmc-gutter-width, 0px)) !important;
+  padding-inline-end: calc(18px + var(--zmc-gutter-width, 0px)) !important;
 }
 
 .zmc-overlay-root {
@@ -74,18 +73,10 @@ export const PDF_STYLES = `
 .zmc-margin-column {
   position: absolute;
   top: 0;
-  width: 264px;
+  width: 360px;
   height: 100%;
   overflow: visible;
   pointer-events: none;
-}
-
-.zmc-margin-column-left {
-  right: calc(100% + 24px);
-}
-
-.zmc-margin-column-right {
-  left: calc(100% + 24px);
 }
 
 .zmc-margin-scrollport {
@@ -119,6 +110,11 @@ export const PDF_STYLES = `
   width: 100%;
   height: 34px;
   padding: 5px 10px;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border: 1px solid color-mix(in srgb, CanvasText 24%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, Canvas 93%, var(--zmc-toggle-color, #6b7c93) 7%);
@@ -140,7 +136,7 @@ export const PDF_STYLES = `
 .zmc-card {
   position: absolute;
   box-sizing: border-box;
-  width: 264px;
+  width: 100%;
   min-height: 42px;
   padding: 7px 9px;
   border: 1px solid color-mix(in srgb, var(--zmc-color) 45%, #a8adb5);
@@ -201,6 +197,12 @@ export const PDF_STYLES = `
 
 .zmc-card-left.zmc-active:not(.zmc-hovered) {
   transform: translateX(-2px);
+}
+
+/* Keep the inner edge clear of original text when hovered/selected. */
+.zmc-margin-column[data-placement="inside"] .zmc-card,
+.zmc-margin-column[data-placement="overhang"] .zmc-card {
+  transform: none;
 }
 
 .zmc-card-preview {

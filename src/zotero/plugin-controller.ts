@@ -6,11 +6,13 @@ import {
 import { AnnotationStore } from "./annotation-store";
 import { ReaderSession } from "./reader-session";
 import { TOOLBAR_STYLES } from "./styles";
+import { normalizeCardWidth, PREFERRED_CARD_WIDTH } from "../core/page-whitespace";
 
 const TOOLBAR_STYLE_ID = "zmc-toolbar-styles";
 const PREFERENCE_PANE_ROOT_ID = "zotero-prefpane-margincomments";
 const COMPACT_NOTE_SETTING_SELECTOR = '[data-zmc-setting="compact-note-icons"]';
 const COLLAPSE_NOTES_SETTING_SELECTOR = '[data-zmc-setting="collapse-notes"]';
+const CARD_WIDTH_SETTING_SELECTOR = '[data-zmc-setting="card-width"]';
 
 export class PluginController {
   private readonly store = new AnnotationStore();
@@ -19,6 +21,7 @@ export class PluginController {
   private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
   private compactNoteIcons = false;
   private collapseNotes = true;
+  private cardWidth = PREFERRED_CARD_WIDTH;
   private preferencePaneID?: string;
   private notifierID?: string;
   private enabled = true;
@@ -64,6 +67,7 @@ export class PluginController {
     this.visibleTypes = this.readVisibleTypesPreference();
     this.compactNoteIcons = this.readCompactNoteIconsPreference();
     this.collapseNotes = this.readCollapseNotesPreference();
+    this.cardWidth = this.readCardWidthPreference();
 
     await this.registerPreferencePane();
 
@@ -160,6 +164,14 @@ export class PluginController {
         });
       }
     }
+    const widthInput = root.querySelector<HTMLInputElement>(CARD_WIDTH_SETTING_SELECTOR);
+    if (widthInput) {
+      widthInput.value = String(this.cardWidth);
+      if (widthInput.dataset.zmcBound !== "true") {
+        widthInput.dataset.zmcBound = "true";
+        widthInput.addEventListener("change", () => this.setCardWidth(widthInput.valueAsNumber));
+      }
+    }
   }
 
   private async ensureSession(reader: any): Promise<ReaderSession | undefined> {
@@ -169,6 +181,7 @@ export class PluginController {
       existing.setVisibleTypes(this.visibleTypes);
       existing.setCompactNoteIcons(this.compactNoteIcons);
       existing.setCollapseNotes(this.collapseNotes);
+      existing.setCardWidth(this.cardWidth);
       await existing.start(this.enabled);
       return existing;
     }
@@ -177,6 +190,7 @@ export class PluginController {
     session.setVisibleTypes(this.visibleTypes);
     session.setCompactNoteIcons(this.compactNoteIcons);
     session.setCollapseNotes(this.collapseNotes);
+    session.setCardWidth(this.cardWidth);
     this.sessions.set(reader, session);
     try {
       await session.start(this.enabled);
@@ -251,6 +265,21 @@ export class PluginController {
     } catch {
       return true;
     }
+  }
+
+  private readCardWidthPreference(): number {
+    try {
+      return normalizeCardWidth((Zotero.Prefs as any).get(`${config.prefsPrefix}.cardWidth`, true));
+    } catch { return PREFERRED_CARD_WIDTH; }
+  }
+
+  private setCardWidth(value: number): void {
+    this.cardWidth = normalizeCardWidth(value);
+    try {
+      (Zotero.Prefs as any).set(`${config.prefsPrefix}.cardWidth`, this.cardWidth, true);
+    } catch (error) { (Zotero as any).logError?.(error); }
+    for (const session of this.sessions.values()) session.setCardWidth(this.cardWidth);
+    this.syncPreferenceCheckboxes();
   }
 
   private setCollapseNotes(enabled: boolean): void {
@@ -391,6 +420,8 @@ export class PluginController {
         COLLAPSE_NOTES_SETTING_SELECTOR,
       );
       if (collapseNotesCheckbox) collapseNotesCheckbox.checked = this.collapseNotes;
+      const widthInput = root.querySelector<HTMLInputElement>(CARD_WIDTH_SETTING_SELECTOR);
+      if (widthInput) widthInput.value = String(this.cardWidth);
     }
   }
 

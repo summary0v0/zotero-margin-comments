@@ -42,5 +42,6 @@ export interface ViewportLike {
   width: number;
   height: number;
   scale?: number;
+  rotation?: number;
   convertToViewportPoint(x: number, y: number): [number, number];
 }

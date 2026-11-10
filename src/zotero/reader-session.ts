@@ -8,6 +8,13 @@ import {
   type PositionedLayoutItem,
 } from "../core/margin-layout";
 import {
+  placeMarginInWhitespace,
+  normalizeCardWidth,
+  PREFERRED_CARD_WIDTH,
+  type MarginPlacement,
+  type PageWhitespace,
+} from "../core/page-whitespace";
+import {
   MARGIN_ANNOTATION_TYPES,
   type MarginAnnotation,
   type MarginAnnotationType,
@@ -28,9 +35,6 @@ import { PDF_STYLES } from "./styles";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const STYLE_ID = "zmc-pdf-styles";
-const CARD_WIDTH = 264;
-const CARD_GAP_FROM_PAGE = 24;
-const MARGIN_EXTENT = CARD_WIDTH + CARD_GAP_FROM_PAGE;
 const COLLAPSE_SCALE_THRESHOLD = 0.8;
 const LAYOUT_PADDING = 8;
 const CARD_GAP = 8;
@@ -65,6 +69,9 @@ interface MountedPage {
   columns: Record<MarginSide, MarginColumnRuntime>;
   runtimes: CardRuntime[];
   positions: Map<string, PositionedLayoutItem>;
+  whitespace?: PageWhitespace;
+  whitespaceRotation?: number;
+  whitespaceRequested?: boolean;
 }
 
 interface MarginColumnRuntime {
@@ -73,6 +80,7 @@ interface MarginColumnRuntime {
   scrollport: HTMLElement;
   content: HTMLElement;
   toggle: HTMLButtonElement;
+  placement: MarginPlacement;
 }
 
 export class ReaderSession {
@@ -82,11 +90,13 @@ export class ReaderSession {
   private readonly expandedMargins = new Set<string>();
   private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
   private annotations: MarginAnnotation[] = [];
+  private annotationsSignature = "";
   private nativeVisibleIDs?: ReadonlySet<string>;
   private activeKey?: string;
   private hoveredKey?: string;
   private compactNoteIcons = false;
   private collapseNotes = true;
+  private cardWidth = PREFERRED_CARD_WIDTH;
   private enabled = true;
   private started = false;
   private adapterReady = false;
@@ -128,7 +138,7 @@ export class ReaderSession {
     if (this.enabled === enabled) return;
     this.enabled = enabled;
     if (enabled && this.adapterReady) {
-      this.render();
+      void this.refresh();
     } else {
       this.removeUi();
     }
@@ -166,6 +176,13 @@ export class ReaderSession {
     if (this.enabled && this.adapterReady) this.render();
   }
 
+  setCardWidth(value: number): void {
+    const width = normalizeCardWidth(value);
+    if (width === this.cardWidth) return;
+    this.cardWidth = width;
+    if (this.enabled && this.adapterReady) this.render();
+  }
+
   async reveal(keys: readonly string[]): Promise<void> {
     keys.forEach((key) => this.forcedKeys.add(String(key)));
     if (!this.enabled) this.setEnabled(true);
@@ -191,7 +208,13 @@ export class ReaderSession {
 
     this.pendingRefresh = false;
     this.annotations = this.store.list(this.attachmentID);
-    if (this.adapterReady) this.syncCompactNoteIcons();
+    this.annotationsSignature = JSON.stringify(this.annotations);
+    if (this.adapterReady) {
+      // A save notification can arrive before the debounced Reader callback.
+      // Never classify a newly saved card against the IDs cached on PDF open.
+      this.nativeVisibleIDs = this.adapter.visibleAnnotationIDs();
+      this.syncCompactNoteIcons();
+    }
     if (this.enabled && this.adapterReady) this.render();
   }
 
@@ -248,6 +271,7 @@ export class ReaderSession {
     if (hasDisplayableAnnotations) {
       this.ensureOverlayRoot(doc, viewer);
     } else {
+      viewer.style.removeProperty("--zmc-gutter-width");
       for (const pageIndex of [...this.mountedPages.keys()]) {
         this.unmountPage(pageIndex);
       }
@@ -280,6 +304,7 @@ export class ReaderSession {
       this.renderPage(handle, pageAnnotations);
     }
     this.syncActiveCards();
+    this.syncViewerGutters(viewer);
     if (waitingForPage) this.scheduleRender(1);
   }
 
@@ -291,6 +316,11 @@ export class ReaderSession {
     this.started = true;
     this.nativeVisibleIDs = this.adapter.visibleAnnotationIDs();
     this.adapter.onLayoutChange((reason) => {
+      if (reason === "pagerendered") {
+        for (const mounted of this.mountedPages.values()) {
+          if (!mounted.whitespace) mounted.whitespaceRequested = false;
+        }
+      }
       if (reason === "scalechanging") {
         this.centerFramesRemaining = Math.max(this.centerFramesRemaining, 4);
       }
@@ -470,7 +500,10 @@ export class ReaderSession {
     toggle.hidden = true;
     scrollport.append(content);
     root.append(scrollport, toggle);
-    return { side, root, scrollport, content, toggle };
+    return {
+      side, root, scrollport, content, toggle,
+      placement: { x: 0, width: this.cardWidth, mode: "outside" },
+    };
   }
 
   private toggleMargin(mounted: MountedPage, side: MarginSide): void {
@@ -687,6 +720,7 @@ export class ReaderSession {
 
   private layoutPage(mounted: MountedPage): void {
     this.positionOverlay(mounted);
+    this.requestWhitespace(mounted);
     const { width, height } = this.pageDimensions(mounted.handle);
     mounted.positions.clear();
 
@@ -697,6 +731,7 @@ export class ReaderSession {
           runtime.anchor.side === side &&
           !runtime.card.classList.contains("zmc-filtered"),
       );
+      column.root.hidden = sideRuntimes.length === 0;
       const stateKey = this.marginStateKey(mounted.handle.pageIndex, side);
       const editing = sideRuntimes.some((runtime) =>
         runtime.card.classList.contains("zmc-editing"),
@@ -705,21 +740,39 @@ export class ReaderSession {
       const runtimeByID = new Map(
         sideRuntimes.map((runtime) => [runtime.annotation.key, runtime] as const),
       );
-      const result = layoutCollapsibleMargin(
-        sideRuntimes.map((runtime) => ({
-          id: runtime.annotation.key,
-          anchorY: runtime.anchor.y,
-          height: this.measureRuntimeHeight(runtime, mounted),
+      const layout = (placement: MarginPlacement) => {
+        column.placement = placement;
+        setPixelStyle(column.root, "left", placement.x);
+        setPixelStyle(column.root, "width", placement.width);
+        column.root.dataset.placement = placement.mode;
+        return layoutCollapsibleMargin(
+          sideRuntimes.map((runtime) => ({
+            id: runtime.annotation.key,
+            anchorY: runtime.anchor.y,
+            height: this.measureRuntimeHeight(runtime, mounted),
+          })),
+          {
+            pageHeight: height,
+            padding: LAYOUT_PADDING,
+            gap: CARD_GAP,
+            summaryHeight: SUMMARY_HEIGHT,
+            expandedTopPadding: this.collapseNotes ? EXPANDED_TOP_PADDING : LAYOUT_PADDING,
+            expanded: !this.collapseNotes || requestedExpanded || editing,
+          },
+        );
+      };
+      const result = layout({ ...column.placement, width: this.cardWidth });
+      // Width is independent of the paper margin, so measure/wrap only once.
+      // Position against the narrowest whitespace over the full card heights.
+      const placement = placeMarginInWhitespace(mounted.whitespace, {
+        side, pageWidth: width, pageHeight: height, cardWidth: this.cardWidth,
+        bands: result.overflow ? undefined : result.positions.map((position) => ({
+          top: position.y, bottom: position.y + position.height,
         })),
-        {
-          pageHeight: height,
-          padding: LAYOUT_PADDING,
-          gap: CARD_GAP,
-          summaryHeight: SUMMARY_HEIGHT,
-          expandedTopPadding: this.collapseNotes ? EXPANDED_TOP_PADDING : LAYOUT_PADDING,
-          expanded: !this.collapseNotes || requestedExpanded || editing,
-        },
-      );
+      });
+      column.placement = placement;
+      setPixelStyle(column.root, "left", placement.x);
+      column.root.dataset.placement = placement.mode;
       const expanded = result.overflow && (!this.collapseNotes || requestedExpanded || editing);
       if (!result.overflow) this.expandedMargins.delete(stateKey);
       if (!expanded) column.scrollport.scrollTop = 0;
@@ -734,6 +787,8 @@ export class ReaderSession {
       if (column.toggle.textContent !== toggleText) {
         column.toggle.textContent = toggleText;
       }
+      column.toggle.title = toggleText;
+      column.toggle.setAttribute("aria-label", toggleText);
       const toggleTop = `${expanded ? LAYOUT_PADDING : result.summaryY ?? 0}px`;
       if (column.toggle.style.top !== toggleTop) column.toggle.style.top = toggleTop;
       const contentHeight = `${result.contentHeight}px`;
@@ -758,14 +813,18 @@ export class ReaderSession {
       }
     }
 
-    mounted.lines.style.left = `-${MARGIN_EXTENT}px`;
-    mounted.lines.setAttribute("width", String(width + MARGIN_EXTENT * 2));
+    const usedColumns = Object.values(mounted.columns).filter((column) => !column.root.hidden);
+    const lineLeft = Math.min(0, ...usedColumns.map((column) => column.placement.x));
+    const lineRight = Math.max(width, ...usedColumns.map((column) => column.placement.x + column.placement.width));
+    mounted.lines.style.left = `${lineLeft}px`;
+    mounted.lines.setAttribute("width", String(lineRight - lineLeft));
     mounted.lines.setAttribute("height", String(Math.max(1, height)));
     mounted.lines.setAttribute(
       "viewBox",
-      `${-MARGIN_EXTENT} 0 ${width + MARGIN_EXTENT * 2} ${Math.max(1, height)}`,
+      `${lineLeft} 0 ${lineRight - lineLeft} ${Math.max(1, height)}`,
     );
     this.redrawLeaderLines(mounted);
+    this.syncViewerGutters(this.adapter.viewerElement());
   }
 
   private redrawLeaderLines(mounted: MountedPage): void {
@@ -779,7 +838,7 @@ export class ReaderSession {
       const cardY = position.y - (expanded ? column.scrollport.scrollTop : 0);
       const lineEndY = cardY + Math.min(26, position.height / 2);
       if (expanded && (lineEndY < 0 || lineEndY > height)) continue;
-      this.drawLeaderLine(mounted.lines, runtime, cardY, position.height, width);
+      this.drawLeaderLine(mounted.lines, runtime, cardY, position.height, column.placement);
     }
   }
 
@@ -793,6 +852,13 @@ export class ReaderSession {
       this.visibilityTimer = undefined;
       if (this.destroyed || !this.enabled || !this.adapterReady) return;
       this.nativeVisibleIDs = this.adapter.visibleAnnotationIDs();
+      // Reader changes cover content as well as filtering. Reload saved data
+      // when it changed; keep the cheaper per-page visibility path for filters.
+      // refresh() defers rebuilding cards while a local editor is active.
+      const annotations = this.store.list(this.attachmentID);
+      if (JSON.stringify(annotations) !== this.annotationsSignature) {
+        void this.refresh();
+      }
       const currentPageIndex = this.adapter.currentPageIndex();
       this.pendingVisibilityPages = [...this.mountedPages.values()].sort(
         (left, right) =>
@@ -841,15 +907,15 @@ export class ReaderSession {
     runtime: CardRuntime,
     cardY: number,
     cardHeight: number,
-    pageWidth: number,
+    placement: MarginPlacement,
   ): void {
     const doc = svg.ownerDocument;
     const line = doc.createElementNS(SVG_NS, "polyline");
     const dot = doc.createElementNS(SVG_NS, "circle");
     const endY = cardY + Math.min(26, cardHeight / 2);
     const isLeft = runtime.anchor.side === "left";
-    const elbowX = isLeft ? -12 : pageWidth + 12;
-    const endX = isLeft ? -CARD_GAP_FROM_PAGE : pageWidth + CARD_GAP_FROM_PAGE;
+    const endX = isLeft ? placement.x + placement.width : placement.x;
+    const elbowX = endX + (isLeft ? 6 : -6);
     line.classList.add("zmc-line");
     line.dataset.annotationKey = runtime.annotation.key;
     line.classList.toggle("zmc-hovered", this.hoveredKey === runtime.annotation.key);
@@ -1020,6 +1086,8 @@ export class ReaderSession {
       this.collapseNotes ? "collapsed" : "full",
       runtime.card.classList.contains("zmc-editing") ? "editing" : "preview",
       runtime.state.textContent ? "status" : "plain",
+      String(mounted.columns[runtime.anchor.side].placement.width),
+      mounted.columns[runtime.anchor.side].placement.mode,
     ].join(":");
     if (runtime.measuredHeight === undefined || runtime.heightMode !== mode) {
       runtime.measuredHeight = measureHeight(runtime.card, runtime.currentValue);
@@ -1092,6 +1160,48 @@ export class ReaderSession {
     style.id = STYLE_ID;
     style.textContent = PDF_STYLES;
     doc.head.append(style);
+  }
+
+  private requestWhitespace(mounted: MountedPage): void {
+    const rotation = mounted.handle.viewport.rotation ?? 0;
+    if (mounted.whitespaceRotation !== rotation) {
+      mounted.whitespaceRotation = rotation;
+      mounted.whitespace = undefined;
+      mounted.whitespaceRequested = false;
+    }
+    if (mounted.whitespaceRequested) return;
+    mounted.whitespaceRequested = true;
+    void this.adapter.pageWhitespace(mounted.handle).then((profile) => {
+      if (
+        !profile || this.destroyed || !this.enabled
+        || this.mountedPages.get(mounted.handle.pageIndex) !== mounted
+        || mounted.whitespaceRotation !== rotation
+      ) return;
+      mounted.whitespace = profile;
+      this.scheduleRender(1);
+    });
+  }
+
+  private syncViewerGutters(viewer: HTMLElement): void {
+    let left = 0;
+    let right = 0;
+    for (const mounted of this.mountedPages.values()) {
+      const { width } = this.pageDimensions(mounted.handle);
+      for (const side of ["left", "right"] as const) {
+        if (!mounted.runtimes.some((runtime) =>
+          runtime.anchor.side === side && !runtime.card.classList.contains("zmc-filtered"),
+        )) continue;
+        const placement = mounted.columns[side].placement;
+        left = Math.max(left, -placement.x);
+        right = Math.max(right, placement.x + placement.width - width);
+      }
+    }
+    // Symmetric padding preserves the original PDF horizontal zoom centre.
+    const gutter = `${Math.ceil(Math.max(left, right))}px`;
+    if (viewer.style.getPropertyValue("--zmc-gutter-width") !== gutter) {
+      viewer.style.setProperty("--zmc-gutter-width", gutter);
+      for (const mounted of this.mountedPages.values()) this.positionOverlay(mounted);
+    }
   }
 
   private ensureOverlayRoot(doc: Document, viewer: HTMLElement): void {
@@ -1170,6 +1280,7 @@ export class ReaderSession {
     for (const pageIndex of [...this.mountedPages.keys()]) this.unmountPage(pageIndex);
     try {
       this.adapter.viewerElement().classList.remove("zmc-viewer");
+      this.adapter.viewerElement().style.removeProperty("--zmc-gutter-width");
       this.adapter.document().getElementById(STYLE_ID)?.remove();
     } catch {
       // The reader may already be closed.

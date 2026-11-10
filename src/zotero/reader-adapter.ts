@@ -4,6 +4,11 @@ import {
   ZOTERO_NOTE_ICON_SIZE,
 } from "../core/annotation-model";
 import type { ViewportLike } from "../core/types";
+import {
+  analyzePageWhitespace,
+  type ContentRect,
+  type PageWhitespace,
+} from "../core/page-whitespace";
 
 export interface PdfPageHandle {
   pageIndex: number;
@@ -35,6 +40,10 @@ export class Zotero9ReaderAdapter {
   private hoveredAnnotationElements: Element[] = [];
   private nativeHoverStyle?: HTMLStyleElement;
   private compactNoteIconsEnabled = false;
+  private whitespaceRequests = new Map<string, Promise<PageWhitespace | undefined>>();
+  private whitespaceQueue: Promise<unknown> = Promise.resolve();
+  private readonly whitespaceBridgeKey = `__zmc_whitespace_${Math.random().toString(36).slice(2)}`;
+  private closed = false;
 
   constructor(readonly reader: any) {}
 
@@ -92,6 +101,43 @@ export class Zotero9ReaderAdapter {
 
   pageCount(): number {
     return Number(this.pdfViewer?.pagesCount ?? this.pdfViewer?._pages?.length ?? 0);
+  }
+
+  /** Render one clean, bounded-size page at a time; cache across zoom changes. */
+  pageWhitespace(handle: PdfPageHandle): Promise<PageWhitespace | undefined> {
+    const rotation = handle.viewport.rotation ?? 0;
+    const key = `${handle.pageIndex}:${rotation}`;
+    const cached = this.whitespaceRequests.get(key);
+    if (cached) return cached;
+    if (this.closed) return Promise.resolve(undefined);
+    const request = this.whitespaceQueue.then(async () => {
+      if (this.closed) return undefined;
+      const pdfWindow = this.pdfWindow;
+      const evaluate = pdfWindow?.eval;
+      if (typeof evaluate !== "function") return undefined;
+      // Gecko's content code cannot read plain JS options created in the
+      // privileged addon scope. Build options, canvas and PDF.js calls together
+      // in the PDF iframe, then return JSON (never content-owned JS objects).
+      const source = `(${renderWhitespaceInPage.toString()})(
+        ${Number(handle.pageIndex)}, ${Number(rotation)}, ${JSON.stringify(this.whitespaceBridgeKey)},
+        (${analyzePageWhitespace.toString()}), (${textContentRects.toString()})
+      )`;
+      const serialized = await evaluate.call(pdfWindow, source);
+      if (this.closed || typeof serialized !== "string") return undefined;
+      return JSON.parse(serialized) as PageWhitespace;
+    }).catch((error) => {
+      // An unavailable/unsupported render must never hide comments or cover text.
+      if (!this.closed) (Zotero as any).logError?.(error);
+      return undefined;
+    }).then((profile) => {
+      // A not-yet-loaded page or transient render failure may succeed on the
+      // next pagerendered event. Do not cache a failed scan for the whole session.
+      if (!profile) this.whitespaceRequests.delete(key);
+      return profile;
+    });
+    this.whitespaceRequests.set(key, request);
+    this.whitespaceQueue = request;
+    return request;
   }
 
   currentPageIndex(): number {
@@ -283,6 +329,17 @@ export class Zotero9ReaderAdapter {
   }
 
   destroy(): void {
+    this.closed = true;
+    try {
+      this.pdfWindow?.eval?.(`(() => {
+        const key = ${JSON.stringify(this.whitespaceBridgeKey)};
+        const state = window[key];
+        if (state) { state.closed = true; state.task?.cancel(); delete window[key]; }
+      })()`);
+    } catch {
+      // The iframe may already have been destroyed when its Reader closes.
+    }
+    this.whitespaceRequests.clear();
     this.clearAnnotationHover();
     this.nativeHoverStyle?.remove();
     this.nativeHoverStyle = undefined;
@@ -329,12 +386,21 @@ export class Zotero9ReaderAdapter {
     const state = this.internalReader?._state;
     const annotations = state?.annotations;
     if (!Array.isArray(annotations)) return "unavailable";
-    return `${state?.showAnnotations !== false ? 1 : 0}:${annotations
-      .map((annotation: any) => {
-        const id = annotation?.id ?? annotation?.key ?? "";
-        return `${String(id)}:${annotation?._hidden ? 1 : 0}`;
-      })
-      .join("|")}`;
+    // Polling is also the content-change fallback when _updateState cannot be
+    // wrapped. IDs alone never change when the first comment is entered.
+    return JSON.stringify([
+      state?.showAnnotations !== false,
+      annotations.map((annotation: any) => [
+        annotation?.id ?? annotation?.key,
+        Boolean(annotation?._hidden),
+        annotation?.type,
+        annotation?.comment,
+        annotation?.color,
+        annotation?.pageLabel,
+        annotation?.position,
+        annotation?.readOnly,
+      ]),
+    ]);
   }
 
   private applyCompactNotePatch(): void {
@@ -398,6 +464,88 @@ function promiseLike(value: unknown): Promise<unknown> {
   return value && typeof (value as PromiseLike<unknown>).then === "function"
     ? Promise.resolve(value)
     : Promise.resolve();
+}
+
+/** Self-contained: executed in the PDF iframe, not the privileged addon scope. */
+async function renderWhitespaceInPage(
+  pageIndex: number,
+  rotation: number,
+  key: string,
+  analyze: typeof analyzePageWhitespace,
+  textBounds: typeof textContentRects,
+): Promise<string | undefined> {
+  const root = window as Window & Record<string, any>;
+  const pdfPage = root.PDFViewerApplication?.pdfViewer?.getPageView?.(pageIndex)?.pdfPage;
+  if (!pdfPage) return undefined;
+  const state = root[key] ??= { closed: false, task: undefined };
+  if (state.closed) return undefined;
+  const native = pdfPage.getViewport({ scale: 1, rotation });
+  const scale = Math.min(1.5, 1000 / native.width, 1400 / native.height);
+  const viewport = pdfPage.getViewport({ scale, rotation });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  try {
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) return undefined;
+    const task = pdfPage.render({
+      canvasContext: context, viewport,
+      background: "rgb(255,255,255)", annotationMode: 0,
+    });
+    state.task = task;
+    await task.promise;
+    if (state.closed) return undefined;
+    const text = await pdfPage.getTextContent();
+    if (state.closed) return undefined;
+    return JSON.stringify(analyze(
+      context.getImageData(0, 0, canvas.width, canvas.height),
+      textBounds(text, viewport, canvas.width, canvas.height),
+    ));
+  } finally {
+    state.task = undefined;
+    canvas.width = canvas.height = 0;
+  }
+}
+
+function textContentRects(
+  text: any,
+  viewport: any,
+  width: number,
+  height: number,
+): ContentRect[] {
+  const v = viewport.transform as number[];
+  if (!v || v.length !== 6) return [];
+  const rects: ContentRect[] = [];
+  for (const item of text?.items ?? []) {
+    if (!item.str?.trim() || !item.transform) continue;
+    const t = item.transform as number[];
+    const a = v[0] * t[0] + v[2] * t[1];
+    const b = v[1] * t[0] + v[3] * t[1];
+    const c = v[0] * t[2] + v[2] * t[3];
+    const d = v[1] * t[2] + v[3] * t[3];
+    const x = v[0] * t[4] + v[2] * t[5] + v[4];
+    const y = v[1] * t[4] + v[3] * t[5] + v[5];
+    const advance = Math.abs(item.width) * viewport.scale;
+    const length = Math.hypot(a, b) || 1;
+    const dx = a / length * advance;
+    const dy = b / length * advance;
+    const style = text.styles?.[item.fontName];
+    const ascent = Number.isFinite(style?.ascent) ? style.ascent : 1;
+    const descent = Number.isFinite(style?.descent) ? style.descent : -0.25;
+    const points = [
+      [x + c * ascent, y + d * ascent],
+      [x + c * descent, y + d * descent],
+      [x + dx + c * ascent, y + dy + d * ascent],
+      [x + dx + c * descent, y + dy + d * descent],
+    ];
+    rects.push({
+      left: (Math.min(...points.map((p) => p[0])) - 1) / width,
+      right: (Math.max(...points.map((p) => p[0])) + 1) / width,
+      top: (Math.min(...points.map((p) => p[1])) - 1) / height,
+      bottom: (Math.max(...points.map((p) => p[1])) + 1) / height,
+    });
+  }
+  return rects;
 }
 
 function compactNotePatchSource(enabled: boolean): string {

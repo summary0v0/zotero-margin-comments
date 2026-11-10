@@ -1,6 +1,6 @@
 <vbox id="zotero-prefpane-margincomments"
       onload="Zotero.MarginComments.controller.registerPreferencePaneWindow(window)">
-  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,缩小,笔记,折叠,展开,Markdown">
+  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,宽度,缩小,笔记,折叠,展开,Markdown">
     <label>
       <html:h2 class="zmc-prefs-heading">旁注显示</html:h2>
     </label>
@@ -56,6 +56,15 @@
     <label>
       <html:h2 class="zmc-prefs-heading">阅读器外观</html:h2>
     </label>
+    <html:div class="zmc-prefs-width-row">
+      <html:label for="zmc-prefs-card-width">批注卡片宽度</html:label>
+      <html:input id="zmc-prefs-card-width" type="number" min="200" max="640" step="20"
+                  data-zmc-setting="card-width" aria-describedby="zmc-prefs-width-help" />
+      <html:span>px</html:span>
+    </html:div>
+    <description id="zmc-prefs-width-help" class="zmc-prefs-description">
+      默认 360px，可设为 200–640px。卡片靠近正文放置，超出纸张边缘的部分向外延伸，缩放 PDF 时保持所设宽度。
+    </description>
     <html:label class="zmc-prefs-option-row" for="zmc-prefs-collapse-notes">
       <html:input id="zmc-prefs-collapse-notes"
                   type="checkbox"

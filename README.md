@@ -13,7 +13,7 @@
   <a href="https://github.com/XiaoDuComrade/zotero-margin-comments">
     <img src="https://img.shields.io/badge/Zotero-9.0.x%20%7C%2010.0.x-CC2936?style=flat-square&logo=zotero&logoColor=white" alt="Zotero 9.0.x / 10.0.x">
   </a>
-  <img src="https://img.shields.io/badge/version-0.8.10-4A78C2?style=flat-square" alt="Version 0.8.10">
+  <img src="https://img.shields.io/badge/version-0.9.0-4A78C2?style=flat-square" alt="Version 0.9.0">
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.8">
   <a href="./LICENSE">
     <img src="https://img.shields.io/github/license/XiaoDuComrade/zotero-margin-comments?style=flat-square" alt="MIT License">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="./releases/margin-comments-0.8.10.xpi?raw=1"><strong>⬇️ 下载 0.8.10</strong></a>
+  <a href="./releases/margin-comments-0.9.0.xpi?raw=1"><strong>⬇️ 下载 0.9.0</strong></a>
   ·
   <a href="#安装">安装</a>
   ·
@@ -38,7 +38,7 @@
 
 Zotero 默认将高亮、下划线等批注的评论集中显示在 Reader 侧栏中。阅读正文时，批注位置与解释内容彼此分离，需要反复移动视线。
 
-Margin Comments 将评论卡片放到对应 PDF 页面的左侧或右侧，并用引线连接原批注：
+Margin Comments 优先将评论卡片放进 PDF 白色纸张内部的左右页边留白，并用短引线连接原批注：
 
 ```text
 PDF 原批注  ─────  引线  ─────  页边评论卡片
@@ -52,7 +52,7 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 
 <table>
   <tr>
-    <td width="50%"><strong>↔️ 智能左右分栏</strong><br>批注位于页面左半区时显示在左边，位于右半区时显示在右边。</td>
+    <td width="50%"><strong>↔️ 靠近正文的页边批注</strong><br>利用原文旁留白靠近正文，卡片保持阅读宽度，空间不足的部分向纸外延伸。</td>
     <td width="50%"><strong>✏️ 就地编辑</strong><br>点击评论卡片即可编辑，停止输入 700 ms 或失焦后自动保存。</td>
   </tr>
   <tr>
@@ -65,14 +65,16 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
   </tr>
   <tr>
     <td><strong>✨ 交互反馈</strong><br>悬停卡片时，卡片、引线与对应原批注会同步加重并浮起。</td>
-    <td><strong>🌗 原生观感</strong><br>支持浅色和深色界面，卡片保持固定屏幕尺寸，不随 PDF 无限缩放。</td>
+    <td><strong>🌗 原生观感</strong><br>支持浅色和深色界面，字号与所设卡片宽度不随 PDF 缩放改变。</td>
   </tr>
 </table>
 
 <details>
 <summary><strong>查看完整功能列表</strong></summary>
 
-- 左右两列分别进行纵向避让，卡片颜色继承原批注颜色。
+- 左右两列分别进行纵向避让，卡片颜色继承原批注颜色；根据卡片覆盖的整个高度判断留白，靠正文一侧保持间距。
+- 默认卡片宽度 360px，可在设置中调整为 200–640px；留白只决定位置，卡片可以跨过纸边，不再为挤入纸内而缩窄或变为笔形入口。检测不可用时保留完整宽度在纸外显示。
+- 纸内卡片不再为两侧预留固定的大块纸外空间；页面留白检测按页和旋转方向缓存，缩放时直接换算。
 - 可在设置中自由开启或关闭笔记折叠：开启时最多预览三行；关闭时显示完整内容，超出页高可在页边栏滚动。
 - 长笔记进入编辑后保留展开高度，编辑框随内容自然增长，超出页高时通过页边栏滚动。
 - 展开密集评论后，只绘制当前边栏视野内卡片的引线。
@@ -80,7 +82,7 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 - `Ctrl/Cmd + Enter` 立即保存，`Esc` 取消尚未保存的编辑。
 - 批注右键菜单提供“在页边显示/编辑评论”，可为尚无评论的划线创建空卡片。
 - Reader 工具栏按钮可以统一显示或隐藏页边批注。
-- 开启笔记折叠时，PDF 缩小到 80% 以下会显示一行预览；关闭折叠后不受缩放影响。
+- 开启笔记折叠时，PDF 缩小到 80% 以下会显示一行预览；关闭折叠后不自动压成一行。两种模式均保持所设卡片宽度。
 - 没有可显示旁注时，不保留额外侧栏或覆盖层，PDF 恢复 Zotero 原生宽度与缩放中心。
 - 卡片高度缓存、DOM 复用和分帧刷新用于降低密集批注、缩放及筛选恢复时的卡顿。
 
@@ -91,6 +93,7 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 打开 **Zotero → 编辑 → 设置 → 页边批注**：
 
 - 选择需要显示的批注类型：高亮、下划线、便签、文字、图片与区域。
+- 设置 **批注卡片宽度**，默认 360px，范围为 200–640px；修改后立即应用到所有已打开的 PDF，并在重启后保留。
 - 开启或关闭 **自动折叠笔记**，同时控制三行预览、低缩放一行预览和密集评论收起。默认开启；关闭后显示完整内容。
 - 笔记阅读状态自动渲染 Markdown：标题、加粗、斜体、列表、引用、代码、链接和表格；点击卡片编辑原文，保留 Markdown 标记。
 - 自动渲染 LaTeX 数学公式：行内 `$…$` / `\(...\)`，独立公式 `$$…$$` / `\[...\]`；支持分式、上下标、求和、矩阵和多行对齐，长公式可横向滚动。点击编辑、保存时仍保留公式原文。
@@ -102,12 +105,18 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 
 ## 安装
 
-1. 下载 [最新版 `margin-comments-0.8.11.xpi`](./releases/margin-comments-0.8.11.xpi?raw=1)。
+1. 下载 [最新版 `margin-comments-0.9.0.xpi`](./releases/margin-comments-0.9.0.xpi?raw=1)。
 2. 打开 **Zotero → 工具 → 插件**。
 3. 点击右上角齿轮，选择 **从文件安装插件**。
 4. 选择下载的 `.xpi` 文件，并按 Zotero 提示完成安装。
 
 首次试用建议使用单独的 Zotero 测试配置文件。历史安装包保存在 [`releases/`](./releases/) 目录中，可以随时回退。
+
+0.9.0 新增页边留白定位：独立读取无批注的页面渲染与文字边界，利用原文旁的空白区域靠近正文。卡片保持所设阅读宽度，允许向纸外延伸；位置和引线随缩放、旋转与内容高度调整。首次检测完成前可能暂时显示在纸外。检测在本机完成，不上传论文、不修改 PDF；复杂扫描件、水印或渲染失败时可能回退纸外显示。
+
+0.9.0 修正版解决了 Zotero 跨窗口传参导致页面尺寸无效、旁注始终回退纸外的问题；已增加原生 Zotero 10.0.8 独立配置验证。若安装了较早的 0.9.0，请重新下载本目录中的安装包覆盖安装并重新打开 PDF。
+
+0.8.12 修复了首次填写批注评论后，页边卡片可能被旧的原生批注显隐状态隐藏、需要重新打开 PDF 才显示的问题。评论保存后会重新读取数据与当前显隐状态；批注变化和重新开启页边批注时也会同步刷新，无需关闭 PDF。纯高亮且未填写评论时仍不自动显示空卡片，可通过批注右键菜单“在页边显示/编辑评论”创建。
 
 ## 使用方法
 
@@ -173,7 +182,7 @@ corepack pnpm run build
 corepack pnpm run verify:xpi
 ```
 
-构建结果位于 `build/margin-comments-0.8.11.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
+构建结果位于 `build/margin-comments-0.8.12.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
 
 - [人工验收清单](./docs/manual-smoke-test.md)
 - [性能与压力测试](./docs/performance.md)

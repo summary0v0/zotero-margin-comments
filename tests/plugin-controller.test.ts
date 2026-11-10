@@ -32,6 +32,7 @@ describe("PluginController annotation type settings", () => {
       setVisibleTypes: vi.fn(),
       setCompactNoteIcons: vi.fn(),
       setCollapseNotes: vi.fn(),
+      setCardWidth: vi.fn(),
     };
     controller.sessions.set({}, session);
     await controller.registerPreferencePane();
@@ -61,6 +62,10 @@ describe("PluginController annotation type settings", () => {
     collapseNotes.type = "checkbox";
     collapseNotes.dataset.zmcSetting = "collapse-notes";
     pane.append(collapseNotes);
+    const cardWidth = document.createElement("input");
+    cardWidth.type = "number";
+    cardWidth.dataset.zmcSetting = "card-width";
+    pane.append(cardWidth);
     document.body.append(pane);
     controller.registerPreferencePaneWindow(window);
 
@@ -106,19 +111,30 @@ describe("PluginController annotation type settings", () => {
     expect(session.setCollapseNotes).toHaveBeenLastCalledWith(false);
     collapseNotes.click();
     expect(session.setCollapseNotes).toHaveBeenLastCalledWith(true);
+    expect(cardWidth.value).toBe("360");
+    cardWidth.value = "480";
+    cardWidth.dispatchEvent(new Event("change"));
+    expect((Zotero as any).Prefs.set).toHaveBeenCalledWith(
+      "extensions.zotero.margincomments.cardWidth", 480, true,
+    );
+    expect(session.setCardWidth).toHaveBeenLastCalledWith(480);
+    controller.registerPreferencePaneWindow(window);
+    expect(cardWidth.value).toBe("480");
   });
 
   it("restores the saved collapse setting and applies it to newly opened readers", async () => {
     (Zotero as any).Prefs.get.mockImplementation((key: string) =>
-      key.endsWith(".collapseNotes") ? false : undefined,
+      key.endsWith(".collapseNotes") ? false : key.endsWith(".cardWidth") ? 420 : undefined,
     );
     vi.spyOn(ReaderSession.prototype, "start").mockResolvedValue(undefined);
     const setCollapse = vi.spyOn(ReaderSession.prototype, "setCollapseNotes");
+    const setWidth = vi.spyOn(ReaderSession.prototype, "setCardWidth");
     const controller = new PluginController() as any;
     await controller.start();
     expect(controller.collapseNotes).toBe(false);
     await controller.ensureSession({ type: "pdf", itemID: 1 });
     expect(setCollapse).toHaveBeenLastCalledWith(false);
+    expect(setWidth).toHaveBeenLastCalledWith(420);
     expect(controller.readCollapseNotesPreference()).toBe(false);
     (Zotero as any).Prefs.get.mockReturnValue(undefined);
     expect(controller.readCollapseNotesPreference()).toBe(true);

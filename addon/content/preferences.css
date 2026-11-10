@@ -6,6 +6,17 @@
   margin-block: 0 6px;
 }
 
+#zotero-prefpane-margincomments .zmc-prefs-width-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 8px 5px;
+}
+#zotero-prefpane-margincomments .zmc-prefs-width-row input {
+  width: 90px;
+  padding: 4px 6px;
+}
+
 #zotero-prefpane-margincomments .zmc-prefs-description {
   max-width: 620px;
   margin-bottom: 8px;
