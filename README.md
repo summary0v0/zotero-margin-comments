@@ -13,7 +13,7 @@
   <a href="https://github.com/XiaoDuComrade/zotero-margin-comments">
     <img src="https://img.shields.io/badge/Zotero-9.0.x%20%7C%2010.0.x-CC2936?style=flat-square&logo=zotero&logoColor=white" alt="Zotero 9.0.x / 10.0.x">
   </a>
-  <img src="https://img.shields.io/badge/version-0.9.0-4A78C2?style=flat-square" alt="Version 0.9.0">
+  <img src="https://img.shields.io/badge/version-0.9.2-4A78C2?style=flat-square" alt="Version 0.9.2">
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.8">
   <a href="./LICENSE">
     <img src="https://img.shields.io/github/license/XiaoDuComrade/zotero-margin-comments?style=flat-square" alt="MIT License">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="./releases/margin-comments-0.9.0.xpi?raw=1"><strong>⬇️ 下载 0.9.0</strong></a>
+  <a href="./releases/margin-comments-0.9.2.xpi?raw=1"><strong>⬇️ 下载 0.9.2</strong></a>
   ·
   <a href="#安装">安装</a>
   ·
@@ -73,6 +73,8 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 <summary><strong>查看完整功能列表</strong></summary>
 
 - 左右两列分别进行纵向避让，卡片颜色继承原批注颜色；根据卡片覆盖的整个高度判断留白，靠正文一侧保持间距。
+- 较长的居中划线批注在两侧卡片数量相同时优先放右侧；判断依据是 PDF 原文划线范围，评论字数不参与选侧。右侧更拥挤时仍优先使用左侧。
+- 明显靠左、靠右的批注保持就近选侧；横跨中线且两侧距离接近的整行、跨行文字高亮与下划线，按同页两侧卡片数量分配。已有分配在本次阅读中保持稳定，编辑、缩放、筛选和临时隐藏不会让卡片换边；旋转后按新方向定位，恢复方向时复用原分配。
 - 默认卡片宽度 360px，可在设置中调整为 200–640px；留白只决定位置，卡片可以跨过纸边，不再为挤入纸内而缩窄或变为笔形入口。检测不可用时保留完整宽度在纸外显示。
 - 纸内卡片不再为两侧预留固定的大块纸外空间；页面留白检测按页和旋转方向缓存，缩放时直接换算。
 - 可在设置中自由开启或关闭笔记折叠：开启时最多预览三行；关闭时显示完整内容，超出页高可在页边栏滚动。
@@ -105,16 +107,22 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 
 ## 安装
 
-1. 下载 [最新版 `margin-comments-0.9.0.xpi`](./releases/margin-comments-0.9.0.xpi?raw=1)。
+1. 下载 [最新版 `margin-comments-0.9.2.xpi`](./releases/margin-comments-0.9.2.xpi?raw=1)。
 2. 打开 **Zotero → 工具 → 插件**。
 3. 点击右上角齿轮，选择 **从文件安装插件**。
 4. 选择下载的 `.xpi` 文件，并按 Zotero 提示完成安装。
 
 首次试用建议使用单独的 Zotero 测试配置文件。历史安装包保存在 [`releases/`](./releases/) 目录中，可以随时回退。
 
+0.9.2 在就近选侧规则之后加入长划线的右侧偏好：居中长高亮或下划线在两侧卡片数相同时先放右侧，右侧更拥挤时使用左侧；已分配卡片继续保持原侧。长划线的原文整体宽度阈值调整为页面宽度的 30%，规则与验证见 [0.9.2 更新说明](./docs/release-0.9.2.md)。
+
+0.9.1 修复整行、跨行高亮容易集中在右侧的问题：明显靠近一侧的批注仍就近显示，仅对居中且较宽的文字选区使用两侧分配，已有卡片不因新增或编辑评论而换边。跨行高亮的引线从所选侧真实高亮片段的上边缘引出。规则与验证见 [0.9.1 更新说明](./docs/release-0.9.1.md)。
+
 0.9.0 新增页边留白定位：独立读取无批注的页面渲染与文字边界，利用原文旁的空白区域靠近正文。卡片保持所设阅读宽度，允许向纸外延伸；位置和引线随缩放、旋转与内容高度调整。首次检测完成前可能暂时显示在纸外。检测在本机完成，不上传论文、不修改 PDF；复杂扫描件、水印或渲染失败时可能回退纸外显示。
 
 0.9.0 修正版解决了 Zotero 跨窗口传参导致页面尺寸无效、旁注始终回退纸外的问题；已增加原生 Zotero 10.0.8 独立配置验证。若安装了较早的 0.9.0，请重新下载本目录中的安装包覆盖安装并重新打开 PDF。
+
+当前 0.9.0 同时修复了编辑笔记时跨行拖选被 PDF 正文接管的问题。笔记内起始的拖选会持续留在笔记中，松开后仍可正常选取原文；已在原生 Zotero 中验证正向、反向跨行拖选及慢速拖动。
 
 0.8.12 修复了首次填写批注评论后，页边卡片可能被旧的原生批注显隐状态隐藏、需要重新打开 PDF 才显示的问题。评论保存后会重新读取数据与当前显隐状态；批注变化和重新开启页边批注时也会同步刷新，无需关闭 PDF。纯高亮且未填写评论时仍不自动显示空卡片，可通过批注右键菜单“在页边显示/编辑评论”创建。
 
@@ -182,7 +190,7 @@ corepack pnpm run build
 corepack pnpm run verify:xpi
 ```
 
-构建结果位于 `build/margin-comments-0.8.12.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
+构建结果位于 `build/margin-comments-0.9.2.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
 
 - [人工验收清单](./docs/manual-smoke-test.md)
 - [性能与压力测试](./docs/performance.md)

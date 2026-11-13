@@ -83,6 +83,85 @@ async function startup() {
     if (!result.layout.startsInPaper || !result.layout.extendsBeyondPaper || Math.abs(bounds.width - 360) > 1) {
       throw new Error("Native Reader did not use the paper margin while retaining the reading width");
     }
+    if (__ZMC_QA_DRAG__) {
+      const pdfWindow = reader._internalReader._primaryView._iframeWindow;
+      const utils = Cu.unwaiveXrays(pdfWindow).windowUtils;
+      const view = reader._internalReader._primaryView;
+      card.querySelector(".zmc-card-preview").click();
+      const editor = card.querySelector(".zmc-card-editor");
+      const source = Array.from({ length: 9 }, (_, i) => `第${i + 1}行：笔记中的文字应该可以跨行拖动选取。`).join("\n");
+      editor.textContent = source;
+      const inputEvent = doc.createEvent("Event");
+      inputEvent.initEvent("input", true, false);
+      editor.dispatchEvent(inputEvent);
+      editor.scrollIntoView({ block: "center", inline: "nearest" });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      function point(offset) {
+        const range = doc.createRange();
+        range.setStart(editor.firstChild, offset);
+        range.setEnd(editor.firstChild, offset + 1);
+        const rect = range.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      }
+      async function drag(start, end) {
+        utils.sendMouseEvent("mousemove", start.x, start.y, 0, 0, 0);
+        utils.sendMouseEvent("mousedown", start.x, start.y, 0, 1, 0);
+        const actionAfterDown = view.action?.type ?? null;
+        for (let i = 1; i <= 20; i++) {
+          utils.sendMouseEvent("mousemove", start.x + (end.x - start.x) * i / 20, start.y + (end.y - start.y) * i / 20, 0, 0, 0);
+          await new Promise((resolve) => setTimeout(resolve, 40));
+        }
+        utils.sendMouseEvent("mouseup", end.x, end.y, 0, 1, 0);
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return actionAfterDown;
+      }
+      const action = await drag(point(2), point(source.indexOf("第7行") + 8));
+      const selection = pdfWindow.getSelection();
+      result.dragSelection = {
+        actionAfterDown: action,
+        selectedLength: selection.toString().length,
+        anchorInEditor: editor.contains(selection.anchorNode),
+        focusInEditor: editor.contains(selection.focusNode),
+        pdfRanges: view._selectionRanges.length,
+        editorUnchanged: editor.textContent === source,
+      };
+      if (!result.dragSelection.anchorInEditor || !result.dragSelection.focusInEditor || result.dragSelection.selectedLength < 80) {
+        throw new Error("Multi-line drag escaped the note editor");
+      }
+      // Start beyond the previous range: pressing inside already-selected text
+      // asks Gecko to drag that text rather than begin a new selection.
+      await drag(point(source.indexOf("第9行") + 8), point(2));
+      result.reverseSelection = {
+        selectedLength: selection.toString().length,
+        anchorInEditor: editor.contains(selection.anchorNode),
+        focusInEditor: editor.contains(selection.focusNode),
+      };
+      if (!result.reverseSelection.anchorInEditor || !result.reverseSelection.focusInEditor || result.reverseSelection.selectedLength < 80) {
+        throw new Error("Reverse multi-line drag escaped the note editor");
+      }
+      editor.blur();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const spans = Array.from(doc.querySelectorAll('.page[data-page-number="2"] .textLayer span')).filter((span) => {
+        const rect = span.getBoundingClientRect();
+        return span.textContent.trim().length > 10 && rect.width > 80 && rect.top > 10 && rect.bottom < pdfWindow.innerHeight - 10;
+      });
+      const start = spans[1].getBoundingClientRect(), end = spans[4].getBoundingClientRect();
+      await drag({ x: start.left + 10, y: start.top + start.height / 2 }, { x: end.left + Math.min(100, end.width / 2), y: end.top + end.height / 2 });
+      result.pdfSelectionRestored = view._selectionRanges.some((range) => !range.collapsed);
+      if (!result.pdfSelectionRestored) throw new Error("PDF selection stayed blocked after the note drag");
+      // End the screenshot on a real note drag, rather than the PDF gesture
+      // used above to verify that normal document selection still works.
+      view.clearSelection();
+      view._render();
+      card.querySelector(".zmc-card-preview").click();
+      await drag(point(2), point(source.indexOf("第7行") + 8));
+      if (!editor.contains(selection.anchorNode) || !editor.contains(selection.focusNode) || selection.toString().length < 80) {
+        throw new Error("Note selection did not work after returning from PDF text");
+      }
+    }
+    if (__ZMC_QA_SIDES__) {
+      await verifyMarginSides({ attachment, annotation, session, adapter, application, pdfPage, result });
+    }
     try {
       adapter.centerCurrentPageHorizontally();
       await new Promise((resolve) => setTimeout(resolve, 200));

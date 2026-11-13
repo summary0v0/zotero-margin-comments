@@ -8,10 +8,12 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const [executable, inputPDF] = process.argv.slice(2);
+const dragTest = process.argv.includes("--drag");
+const sideTest = process.argv.includes("--sides");
 if (!executable || !inputPDF || !fs.existsSync(executable) || !fs.existsSync(inputPDF)) {
   throw new Error("Usage: node scripts/verify-zotero-runtime.mjs <zotero.exe> <PLLaVA PDF>");
 }
-const out = path.join(root, "build/zotero-runtime-qa");
+const out = path.join(root, sideTest ? "build/zotero-sides-qa" : "build/zotero-runtime-qa");
 const profile = path.join(out, "profile");
 const dataDirectory = path.join(out, "data");
 const addon = path.join(out, "test-addon");
@@ -38,7 +40,10 @@ fs.mkdirSync(path.join(addon, "content/icons"), { recursive: true });
 fs.copyFileSync(path.join(root, "addon/content/icons/margin-comments.svg"), path.join(addon, "content/icons/margin-comments.svg"));
 const bootstrap = fs.readFileSync(path.join(root, "bench/zotero-runtime-bootstrap.js"), "utf8")
   .replace("__ZMC_QA_ROOT__", JSON.stringify(out)).replace("__ZMC_QA_INPUT__", JSON.stringify(path.resolve(inputPDF)));
-fs.writeFileSync(path.join(addon, "bootstrap.js"), bootstrap);
+fs.writeFileSync(path.join(addon, "bootstrap.js"), bootstrap
+  .replace("__ZMC_QA_DRAG__", JSON.stringify(dragTest))
+  .replace("__ZMC_QA_SIDES__", JSON.stringify(sideTest))
+  + (sideTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-sides-runtime.js"), "utf8") : ""));
 const testXpi = path.join(out, "test-addon.xpi");
 if (fs.existsSync(testXpi)) fs.unlinkSync(testXpi);
 const quotePS = (value) => `'${value.replaceAll("'", "''")}'`;

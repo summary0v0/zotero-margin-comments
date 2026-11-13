@@ -83,4 +83,14 @@ describe("annotation model", () => {
       shouldDisplayAnnotation({ ...base, comment: "" }, new Set([base.key])),
     ).toBe(true);
   });
+
+  it("can connect either margin to a real segment of a multiline highlight", () => {
+    const position = { pageIndex: 0, rects: [[60, 80, 90, 90], [10, 60, 70, 70]] };
+    const viewport = {
+      width: 100, height: 100,
+      convertToViewportPoint: (x: number, y: number): [number, number] => [x, 100 - y],
+    };
+    expect(annotationAnchor(position, viewport, "left")).toEqual({ x: 10, y: 30, side: "left" });
+    expect(annotationAnchor(position, viewport, "right")).toEqual({ x: 90, y: 10, side: "right" });
+  });
 });

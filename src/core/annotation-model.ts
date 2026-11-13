@@ -62,6 +62,7 @@ export function shouldDisplayAnnotation(
 export function annotationAnchor(
   position: AnnotationPosition,
   viewport: ViewportLike,
+  side?: PageAnchor["side"],
 ): PageAnchor | undefined {
   const rects = position.rects?.filter((rect) => rect.length >= 4) ?? [];
   if (rects.length) {
@@ -70,7 +71,14 @@ export function annotationAnchor(
     const rightmost = Math.max(...converted.map((rect) => rect[2]));
     const top = Math.min(...converted.map((rect) => rect[1]));
     const bottom = Math.max(...converted.map((rect) => rect[3]));
-    return marginFacingAnchor(leftmost, rightmost, top, bottom, viewport);
+    const anchor = marginFacingAnchor(leftmost, rightmost, top, bottom, viewport, side);
+    // Multiline selections can reach their left/right extreme on a later line.
+    // Start at that real segment, rather than an empty corner of the union box.
+    const edge = anchor.side === "left" ? 0 : 2;
+    const boundary = anchor.side === "left" ? leftmost : rightmost;
+    const edgeTop = Math.min(...converted.filter((rect) => rect[edge] === boundary).map((rect) => rect[1]));
+    anchor.y = Math.max(0, Math.min(viewport.height, edgeTop));
+    return anchor;
   }
 
   const points = (position.paths ?? [])
@@ -82,7 +90,7 @@ export function annotationAnchor(
   const rightmost = Math.max(...points.map(([x]) => x));
   const top = Math.min(...points.map(([, y]) => y));
   const bottom = Math.max(...points.map(([, y]) => y));
-  return marginFacingAnchor(leftmost, rightmost, top, bottom, viewport);
+  return marginFacingAnchor(leftmost, rightmost, top, bottom, viewport, side);
 }
 
 export function compactNoteAnchor(
@@ -125,8 +133,9 @@ function marginFacingAnchor(
   top: number,
   bottom: number,
   viewport: ViewportLike,
+  preferredSide?: PageAnchor["side"],
 ): PageAnchor {
-  const side = (left + right) / 2 < viewport.width / 2 ? "left" : "right";
+  const side = preferredSide ?? ((left + right) / 2 < viewport.width / 2 ? "left" : "right");
   return {
     x: Math.max(0, Math.min(viewport.width, side === "left" ? left : right)),
     y: Math.max(0, Math.min(viewport.height, top)),

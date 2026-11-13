@@ -4,6 +4,7 @@ import {
   ZOTERO_NOTE_ICON_SIZE,
 } from "../core/annotation-model";
 import type { ViewportLike } from "../core/types";
+import { setEditorSelectionGuard } from "./editor-selection-guard";
 import {
   analyzePageWhitespace,
   type ContentRect,
@@ -74,6 +75,7 @@ export class Zotero9ReaderAdapter {
     if (!this.pdfDocument || !this.pdfViewer) {
       throw new Error("Zotero PDF.js 视图尚未就绪");
     }
+    this.setEditorSelectionGuard(true);
   }
 
   viewerElement(): HTMLElement {
@@ -329,6 +331,7 @@ export class Zotero9ReaderAdapter {
   }
 
   destroy(): void {
+    this.setEditorSelectionGuard(false);
     this.closed = true;
     try {
       this.pdfWindow?.eval?.(`(() => {
@@ -357,6 +360,15 @@ export class Zotero9ReaderAdapter {
     this.pdfWindow = undefined;
     this.primaryView = undefined;
     this.internalReader = undefined;
+  }
+
+  private setEditorSelectionGuard(enabled: boolean): void {
+    const readerWindow = this.reader?._iframeWindow;
+    const evaluate = readerWindow?.eval;
+    if (typeof evaluate !== "function") return;
+    try {
+      evaluate.call(readerWindow, `(${setEditorSelectionGuard.toString()})(${enabled})`);
+    } catch (error) { (Zotero as any).logError?.(error); }
   }
 
   private nativeAnnotationElements(key: string): Element[] {

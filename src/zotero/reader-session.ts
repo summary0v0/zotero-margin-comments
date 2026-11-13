@@ -7,6 +7,7 @@ import {
   layoutCollapsibleMargin,
   type PositionedLayoutItem,
 } from "../core/margin-layout";
+import { assignMarginSides, canUseEitherMargin } from "../core/margin-side";
 import {
   placeMarginInWhitespace,
   normalizeCardWidth,
@@ -88,6 +89,10 @@ export class ReaderSession {
   private readonly forcedKeys = new Set<string>();
   private readonly mountedPages = new Map<number, MountedPage>();
   private readonly expandedMargins = new Set<string>();
+  private readonly marginSides = new Map<string, {
+    position: string;
+    rotations: Map<number, MarginSide>;
+  }>();
   private visibleTypes = new Set<MarginAnnotationType>(MARGIN_ANNOTATION_TYPES);
   private annotations: MarginAnnotation[] = [];
   private annotationsSignature = "";
@@ -209,6 +214,10 @@ export class ReaderSession {
     this.pendingRefresh = false;
     this.annotations = this.store.list(this.attachmentID);
     this.annotationsSignature = JSON.stringify(this.annotations);
+    const keys = new Set(this.annotations.map((annotation) => annotation.key));
+    for (const key of this.marginSides.keys()) {
+      if (!keys.has(key)) this.marginSides.delete(key);
+    }
     if (this.adapterReady) {
       // A save notification can arrive before the debounced Reader callback.
       // Never classify a newly saved card against the IDs cached on PDF open.
@@ -231,6 +240,7 @@ export class ReaderSession {
     this.renderFramesRemaining = 0;
     this.centerFramesRemaining = 0;
     this.removeUi();
+    this.marginSides.clear();
     this.adapter.destroy();
   }
 
@@ -340,10 +350,11 @@ export class ReaderSession {
     handle: PdfPageHandle,
     annotations: MarginAnnotation[],
   ): void {
+    const prepared = this.preparePageAnnotations(handle, annotations);
     const existing = this.mountedPages.get(handle.pageIndex);
     if (
       existing?.handle.element === handle.element &&
-      this.updateMountedPage(existing, handle, annotations)
+      this.updateMountedPage(existing, handle, prepared)
     ) {
       return;
     }
@@ -386,9 +397,7 @@ export class ReaderSession {
       });
     }
 
-    for (const annotation of annotations) {
-      const anchor = this.annotationAnchorForHandle(annotation, handle);
-      if (!anchor) continue;
+    for (const { annotation, anchor } of prepared) {
       const runtime = this.createCard(doc, annotation, anchor, handle.pageIndex);
       runtime.card.classList.toggle(
         "zmc-filtered",
@@ -403,17 +412,8 @@ export class ReaderSession {
   private updateMountedPage(
     mounted: MountedPage,
     handle: PdfPageHandle,
-    annotations: MarginAnnotation[],
+    prepared: { annotation: MarginAnnotation; anchor: PageAnchor }[],
   ): boolean {
-    const prepared = annotations
-      .map((annotation) => ({
-        annotation,
-        anchor: this.annotationAnchorForHandle(annotation, handle),
-      }))
-      .filter(
-        (entry): entry is { annotation: MarginAnnotation; anchor: PageAnchor } =>
-          Boolean(entry.anchor),
-      );
     if (prepared.length !== mounted.runtimes.length) return false;
     const byKey = new Map(
       prepared.map((entry) => [entry.annotation.key, entry] as const),
@@ -1236,13 +1236,58 @@ export class ReaderSession {
     setPixelStyle(mounted.overlay, "height", height);
   }
 
+  private preparePageAnnotations(
+    handle: PdfPageHandle,
+    annotations: MarginAnnotation[],
+  ): { annotation: MarginAnnotation; anchor: PageAnchor }[] {
+    const rotation = handle.viewport.rotation ?? 0;
+    const { width } = this.pageDimensions(handle);
+    const previous = new Map<string, MarginSide>();
+    const candidates = annotations.flatMap((annotation) => {
+      const anchor = this.annotationAnchorForHandle(annotation, handle);
+      if (!anchor) return [];
+      const isText = annotation.type === "highlight" || annotation.type === "underline";
+      const opposite = isText
+        ? this.annotationAnchorForHandle(annotation, handle, anchor.side === "left" ? "right" : "left")!
+        : anchor;
+      const left = anchor.side === "left" ? anchor : opposite;
+      const right = anchor.side === "right" ? anchor : opposite;
+      const flexible = isText && canUseEitherMargin(left.x, right.x, width);
+      const position = JSON.stringify(annotation.position);
+      const cached = this.marginSides.get(annotation.key);
+      if (flexible && cached?.position === position) {
+        const side = cached.rotations.get(rotation);
+        if (side) previous.set(annotation.key, side);
+      }
+      return [{ annotation, anchor, left, right, flexible, position }];
+    });
+    const sides = assignMarginSides(candidates.map((entry) => ({
+      key: entry.annotation.key,
+      anchorY: entry.anchor.y,
+      preferredSide: entry.flexible ? undefined : entry.anchor.side,
+    })), previous);
+    return candidates.map((entry) => {
+      const side = sides.get(entry.annotation.key)!;
+      if (entry.flexible) {
+        let cached = this.marginSides.get(entry.annotation.key);
+        if (cached?.position !== entry.position) {
+          cached = { position: entry.position, rotations: new Map() };
+          this.marginSides.set(entry.annotation.key, cached);
+        }
+        cached.rotations.set(rotation, side);
+      }
+      return { annotation: entry.annotation, anchor: entry[side] };
+    });
+  }
+
   private annotationAnchorForHandle(
     annotation: MarginAnnotation,
     handle: PdfPageHandle,
+    side?: MarginSide,
   ): PageAnchor | undefined {
     const anchor = this.compactNoteIcons && annotation.type === "note"
       ? compactNoteAnchor(annotation.position, handle.viewport)
-      : annotationAnchor(annotation.position, handle.viewport);
+      : annotationAnchor(annotation.position, handle.viewport, side);
     if (!anchor) return undefined;
     const { width, height } = this.pageDimensions(handle);
     const scaleX = handle.viewport.width > 0 ? width / handle.viewport.width : 1;
