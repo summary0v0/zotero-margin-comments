@@ -6,6 +6,9 @@ import { mathPlugin, renderMath } from "./math-preview";
 // HTML into Zotero's privileged reader document or fetch remote note images.
 const markdown = new MarkdownIt({ html: true, breaks: true, linkify: false }).use(mathPlugin);
 type Token = ReturnType<MarkdownIt["parse"]>[number];
+export interface MarkdownPreviewOptions {
+  image?: (reference: string, alt: string) => HTMLElement | undefined;
+}
 const BLOCK_TAGS = new Set([
   "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li",
   "blockquote", "table", "thead", "tbody", "tr", "th", "td",
@@ -13,13 +16,13 @@ const BLOCK_TAGS = new Set([
 ]);
 const ZOTERO_TAG = /^<(\/)?(b|i|sub|sup|strong|em|br)\s*(\/?)>$/i;
 
-function renderTokens(root: HTMLElement, tokens: Token[]): void {
+function renderTokens(root: HTMLElement, tokens: Token[], options: MarkdownPreviewOptions): void {
   const doc = root.ownerDocument;
   const stack: HTMLElement[] = [root];
   for (const token of tokens) {
     const parent = stack.at(-1)!;
     if (token.type === "inline") {
-      renderTokens(parent, token.children ?? []);
+      renderTokens(parent, token.children ?? [], options);
     } else if (token.type === "math_inline" || token.type === "math_display") {
       parent.append(renderMath(doc, token.content, token.type === "math_display", token.meta.source));
     } else if (token.type === "text") {
@@ -38,6 +41,11 @@ function renderTokens(root: HTMLElement, tokens: Token[]): void {
     } else if (token.type === "hr") {
       parent.append(doc.createElement("hr"));
     } else if (token.type === "image") {
+      const image = options.image?.(token.attrGet("src") ?? "", token.content || "图片");
+      if (image) {
+        parent.append(image);
+        continue;
+      }
       const alt = doc.createElement("span");
       alt.textContent = `[图片：${token.content || "图片"}]`;
       parent.append(alt);
@@ -84,8 +92,22 @@ function renderTokens(root: HTMLElement, tokens: Token[]): void {
   }
 }
 
-export function renderMarkdownComment(root: HTMLElement, value: string): void {
+export function renderMarkdownComment(root: HTMLElement, value: string, options: MarkdownPreviewOptions = {}): void {
   root.replaceChildren();
   root.classList.add("zmc-markdown");
-  renderTokens(root, markdown.parse(value, {}));
+  renderTokens(root, markdown.parse(value, {}), options);
+}
+
+/** Image-only preview below the source editor; code examples are not interpreted. */
+export function renderCommentImages(root: HTMLElement, value: string, options: MarkdownPreviewOptions): void {
+  root.replaceChildren();
+  const visit = (tokens: Token[]) => {
+    for (const token of tokens) {
+      if (token.type === "image") {
+        const image = options.image?.(token.attrGet("src") ?? "", token.content || "图片");
+        if (image) root.append(image);
+      } else if (token.children) visit(token.children);
+    }
+  };
+  visit(markdown.parse(value, {}));
 }

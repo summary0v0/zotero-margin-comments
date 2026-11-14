@@ -7,3 +7,4 @@ pref("extensions.zotero.margincomments.types.image", true);
 pref("extensions.zotero.margincomments.compactNoteIcons", false);
 pref("extensions.zotero.margincomments.collapseNotes", true);
 pref("extensions.zotero.margincomments.cardWidth", 360);
+pref("extensions.zotero.margincomments.fontSize", "12.5");

@@ -54,7 +54,7 @@ async function startup() {
     const profile = await adapter.pageWhitespace(adapter.page(1));
     result.profileRows = profile?.rows.length ?? 0;
     if (!result.profileRows) throw new Error("Native PDF iframe returned no whitespace profile");
-    const session = new scope.MarginSession(reader, new scope.MarginStore(), () => {});
+    let session = new scope.MarginSession(reader, new scope.MarginStore(), () => {});
     session.setCollapseNotes(false);
     await session.start(true);
     Zotero.getMainWindow().resizeTo(2200, 1400);
@@ -161,6 +161,12 @@ async function startup() {
     }
     if (__ZMC_QA_SIDES__) {
       await verifyMarginSides({ attachment, annotation, session, adapter, application, pdfPage, result });
+    }
+    if (__ZMC_QA_IMAGES__) {
+      session = await verifyCommentImages({ attachment, annotation, session, adapter, reader, scope, result, root });
+    }
+    if (__ZMC_QA_ZOOM__) {
+      await verifyCommentZoom({ annotation, session, adapter, application, reader, scope, result, root });
     }
     try {
       adapter.centerCurrentPageHorizontally();

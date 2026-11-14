@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderMarkdownComment } from "../src/zotero/markdown-preview";
 import { readStoredComment, renderStoredComment } from "../src/zotero/rich-text-editor";
+import { renderAssetImage } from "../src/zotero/image-preview";
+import { ImageAssets } from "../src/zotero/image-assets";
 
 describe("Markdown comment preview", () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -52,5 +54,21 @@ describe("Markdown comment preview", () => {
     expect(readStoredComment(editor)).toBe(source);
     expect(editor.querySelector("h2")).toBeNull();
     expect(preview.querySelector("h2")?.textContent).toBe("研究方向");
+  });
+
+  it("only resolves controlled PDF-local references when image support is enabled", async () => {
+    const root = document.createElement("div");
+    const assets = new ImageAssets(1);
+    const load = vi.spyOn(assets, "load").mockResolvedValue("data:image/png;base64,test");
+    const ref = `margin-comments-assets/ABCD1234/${"a".repeat(64)}.png`;
+    renderMarkdownComment(root,
+      `![截图](${ref})\n\n![远程](https://example.org/a.png)\n\n![越界](../a.png)\n\n\`![代码](${ref})\``,
+      { image: (reference, alt) => renderAssetImage(document, assets, reference, alt, () => {}) });
+    await Promise.resolve();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith(ref);
+    expect(root.querySelectorAll("img")).toHaveLength(1);
+    expect(root.textContent).toContain("远程");
+    expect(root.querySelector("code")?.textContent).toContain(ref);
   });
 });

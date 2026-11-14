@@ -95,7 +95,7 @@ describe("ReaderSession", () => {
       off: vi.fn(),
     };
     const pdfViewer = {
-      currentScale: 0.75,
+      currentScale: 1,
       currentPageNumber: 1,
       pagesPromise: Promise.resolve(),
       getPageView: () => ({ div: page, viewport }),
@@ -287,7 +287,7 @@ describe("ReaderSession", () => {
     expect(document.querySelectorAll(".zmc-line")).toHaveLength(3);
     expect(document.querySelector(".zmc-card-header")).toBeNull();
     expect(document.querySelector(".zmc-save-button")).toBeNull();
-    expect(document.querySelector(".zmc-page-overlay.zmc-low-zoom")).not.toBeNull();
+    expect(document.querySelector(".zmc-page-overlay.zmc-low-zoom")).toBeNull();
     expect(document.getElementById("zmc-pdf-styles")?.textContent).toContain(
       "padding-inline",
     );
@@ -370,12 +370,13 @@ describe("ReaderSession", () => {
       document.querySelector('.zmc-card[data-annotation-key="COMMENT1"]'),
     ).toBe(originalCard);
     expect(originalOverlay.classList.contains("zmc-low-zoom")).toBe(false);
-    expect((originalOverlay as HTMLElement).style.width).toBe("720px");
+    expect((originalOverlay as HTMLElement).style.width).toBe("600px");
+    expect((originalOverlay as HTMLElement).style.transform).toBe("scale(1.2, 1)");
     expect(
       document
         .querySelector('.zmc-line[data-annotation-key="COMMENT1"]')
         ?.getAttribute("points"),
-    ).toMatch(/^12,20 /);
+    ).toMatch(/^10,20 /);
 
     const secondCommentCard = document.querySelector<HTMLElement>(
       '.zmc-card[data-annotation-key="COMMENT2"]',
@@ -428,7 +429,7 @@ describe("ReaderSession", () => {
     overflowToggle.click();
     expect(leftColumn.classList.contains("zmc-margin-expanded")).toBe(false);
 
-    pdfViewer.currentScale = 0.75;
+    pdfViewer.currentScale = 1;
     session.setCollapseNotes(false);
     expect(document.querySelector(".zmc-no-collapse")).not.toBeNull();
     expect(document.querySelector(".zmc-low-zoom")).toBeNull();
@@ -437,7 +438,7 @@ describe("ReaderSession", () => {
     expect(overflowToggle.hidden).toBe(true);
     session.setCollapseNotes(true);
     expect(document.querySelector(".zmc-no-collapse")).toBeNull();
-    expect(document.querySelector(".zmc-low-zoom")).not.toBeNull();
+    expect(document.querySelector(".zmc-low-zoom")).toBeNull();
     expect(leftColumn.querySelectorAll(".zmc-overflow-hidden")).toHaveLength(1);
     expect(overflowToggle.hidden).toBe(false);
 

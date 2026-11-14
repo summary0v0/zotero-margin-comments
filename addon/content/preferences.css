@@ -9,12 +9,24 @@
 #zotero-prefpane-margincomments .zmc-prefs-width-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 9px;
   margin: 8px 5px;
 }
-#zotero-prefpane-margincomments .zmc-prefs-width-row input {
+#zotero-prefpane-margincomments .zmc-prefs-width-row input[type="number"] {
   width: 90px;
   padding: 4px 6px;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-width-row input[type="range"] {
+  flex: 1;
+  min-width: 130px;
+  accent-color: #4a78c2;
+}
+
+#zotero-prefpane-margincomments .zmc-prefs-width-row button {
+  padding: 4px 8px;
+  cursor: pointer;
 }
 
 #zotero-prefpane-margincomments .zmc-prefs-description {

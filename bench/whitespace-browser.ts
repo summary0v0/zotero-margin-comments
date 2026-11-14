@@ -86,7 +86,8 @@ async function main() {
     const mode = card().closest<HTMLElement>(".zmc-margin-column")!.dataset.placement;
     let ink = 0;
     const configured = card().closest<HTMLElement>(".zmc-margin-column")!.getBoundingClientRect().width;
-    if (Math.abs(configured - expectedWidth) > .1 || c.width < expectedWidth - 16 || c.width > expectedWidth + .1) {
+    const scaledWidth = expectedWidth * zoom;
+    if (Math.abs(configured - scaledWidth) > 1 || c.width < scaledWidth - 16 || c.width > scaledWidth + 1) {
       throw new Error(`${name}: configured reading width was not preserved (${c.width}px)`);
     }
     {
@@ -102,7 +103,7 @@ async function main() {
     }
     checks.push({ name, zoom, rotation, mode, width: c.width, originalInkCovered: ink, analysisRenders });
   }
-  await until(() => column().dataset.placement === "inside");
+  await until(() => column().dataset.placement === "overhang");
   check("table-and-math");
   zoom = 1;
   await draw(); callbacks.get("scalechanging")!();
@@ -161,7 +162,7 @@ async function main() {
   Object.assign(highlight.style, { left: `${p1[0]}px`, top: `${p1[1]}px`, width: `${p2[0]-p1[0]}px`, height: `${p2[1]-p1[1]}px` });
   page.append(highlight);
   document.documentElement.dataset.qa = "passed";
-  document.getElementById("status")!.textContent = "0.9.0 · 批注保持宽度，利用留白并向纸外延伸";
+  document.getElementById("status")!.textContent = "0.11.0 · 批注随 PDF 等比缩放，保持相对布局";
   document.getElementById("report")!.textContent = JSON.stringify({ passed: true, checks });
 }
 

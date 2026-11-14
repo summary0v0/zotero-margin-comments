@@ -66,6 +66,14 @@ describe("PluginController annotation type settings", () => {
     cardWidth.type = "number";
     cardWidth.dataset.zmcSetting = "card-width";
     pane.append(cardWidth);
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "200";
+    slider.max = "640";
+    slider.dataset.zmcSetting = "card-width-slider";
+    const reset = document.createElement("button");
+    reset.dataset.zmcSetting = "card-width-reset";
+    pane.append(slider, reset);
     document.body.append(pane);
     controller.registerPreferencePaneWindow(window);
 
@@ -120,23 +128,103 @@ describe("PluginController annotation type settings", () => {
     expect(session.setCardWidth).toHaveBeenLastCalledWith(480);
     controller.registerPreferencePaneWindow(window);
     expect(cardWidth.value).toBe("480");
+    expect(slider.value).toBe("480");
+    slider.value = "520";
+    slider.dispatchEvent(new Event("input"));
+    expect(cardWidth.value).toBe("520");
+    expect(session.setCardWidth).toHaveBeenLastCalledWith(520);
+    cardWidth.value = "4";
+    cardWidth.dispatchEvent(new Event("input"));
+    expect(session.setCardWidth).toHaveBeenLastCalledWith(520);
+    cardWidth.value = "437";
+    cardWidth.dispatchEvent(new Event("input"));
+    expect(slider.value).toBe("437");
+    expect(session.setCardWidth).toHaveBeenLastCalledWith(437);
+    reset.click();
+    expect(cardWidth.value).toBe("360");
+    expect(slider.value).toBe("360");
+    expect((Zotero as any).Prefs.set).toHaveBeenLastCalledWith(
+      "extensions.zotero.margincomments.cardWidth", 360, true,
+    );
   });
 
   it("restores the saved collapse setting and applies it to newly opened readers", async () => {
     (Zotero as any).Prefs.get.mockImplementation((key: string) =>
-      key.endsWith(".collapseNotes") ? false : key.endsWith(".cardWidth") ? 420 : undefined,
+      key.endsWith(".collapseNotes") ? false : key.endsWith(".cardWidth") ? 420
+        : key.endsWith(".fontSize") ? "17.5" : undefined,
     );
     vi.spyOn(ReaderSession.prototype, "start").mockResolvedValue(undefined);
     const setCollapse = vi.spyOn(ReaderSession.prototype, "setCollapseNotes");
     const setWidth = vi.spyOn(ReaderSession.prototype, "setCardWidth");
+    const setFont = vi.spyOn(ReaderSession.prototype, "setFontSize");
     const controller = new PluginController() as any;
     await controller.start();
     expect(controller.collapseNotes).toBe(false);
     await controller.ensureSession({ type: "pdf", itemID: 1 });
     expect(setCollapse).toHaveBeenLastCalledWith(false);
     expect(setWidth).toHaveBeenLastCalledWith(420);
+    expect(setFont).toHaveBeenLastCalledWith(17.5);
     expect(controller.readCollapseNotesPreference()).toBe(false);
     (Zotero as any).Prefs.get.mockReturnValue(undefined);
     expect(controller.readCollapseNotesPreference()).toBe(true);
+  });
+
+  it("synchronizes font controls, persists fractional sizes and handles incomplete input", () => {
+    const prefs = new Map<string, unknown>();
+    (Zotero as any).Prefs.get.mockImplementation((key: string) => prefs.get(key));
+    (Zotero as any).Prefs.set.mockImplementation((key: string, value: unknown) => prefs.set(key, value));
+    const controller = new PluginController() as any;
+    const first = { setFontSize: vi.fn() }, second = { setFontSize: vi.fn() };
+    controller.sessions.set({}, first);
+    controller.sessions.set({}, second);
+    const pane = document.createElement("section");
+    pane.id = "zotero-prefpane-margincomments";
+    const number = document.createElement("input");
+    number.type = "number";
+    number.step = "0.5";
+    number.dataset.zmcSetting = "font-size";
+    const slider = document.createElement("input");
+    slider.type = "range";
+    slider.min = "8";
+    slider.max = "32";
+    slider.step = "0.5";
+    slider.dataset.zmcSetting = "font-size-slider";
+    const reset = document.createElement("button");
+    reset.dataset.zmcSetting = "font-size-reset";
+    pane.append(number, slider, reset);
+    document.body.append(pane);
+    controller.registerPreferencePaneWindow(window);
+    controller.registerPreferencePaneWindow(window);
+    expect(number.value).toBe("12.5");
+    expect(slider.value).toBe("12.5");
+    slider.value = "16.5";
+    slider.dispatchEvent(new Event("input"));
+    expect(number.value).toBe("16.5");
+    expect(prefs.get("extensions.zotero.margincomments.fontSize")).toBe("16.5");
+    expect(first.setFontSize).toHaveBeenCalledTimes(1);
+    expect(second.setFontSize).toHaveBeenLastCalledWith(16.5);
+    expect((new PluginController() as any).readFontSizePreference()).toBe(16.5);
+    number.value = "1";
+    number.dispatchEvent(new Event("input"));
+    expect(first.setFontSize).toHaveBeenCalledTimes(1);
+    number.value = "18.5";
+    number.dispatchEvent(new Event("input"));
+    expect(slider.value).toBe("18.5");
+    expect(first.setFontSize).toHaveBeenLastCalledWith(18.5);
+    number.value = "99";
+    number.dispatchEvent(new Event("change"));
+    expect(number.value).toBe("32");
+    number.value = "2";
+    number.dispatchEvent(new Event("change"));
+    expect(slider.value).toBe("8");
+    number.value = "";
+    number.dispatchEvent(new Event("change"));
+    expect(number.value).toBe("12.5");
+    slider.value = "20";
+    slider.dispatchEvent(new Event("input"));
+    reset.click();
+    expect(number.value).toBe("12.5");
+    expect(slider.value).toBe("12.5");
+    expect(prefs.get("extensions.zotero.margincomments.fontSize")).toBe("12.5");
   });
 });

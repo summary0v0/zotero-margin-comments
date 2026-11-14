@@ -2,6 +2,15 @@ import { isSupportedType, parsePosition } from "../core/annotation-model";
 import type { MarginAnnotation } from "../core/types";
 
 export class AnnotationStore {
+  /** Cleanup must include annotations outside the visible/supported card types. */
+  listAllComments(attachmentID: number): string[] {
+    const attachment = (Zotero.Items as any).get(attachmentID);
+    if (typeof attachment?.getAnnotations !== "function") throw new Error("无法读取 PDF 的全部批注");
+    const annotations = attachment.getAnnotations(false);
+    if (!Array.isArray(annotations)) throw new Error("PDF 批注尚未就绪");
+    return annotations.map((item: any) => String(item.annotationComment ?? ""));
+  }
+
   list(attachmentID: number): MarginAnnotation[] {
     const attachment = (Zotero.Items as any).get(attachmentID);
     if (!attachment || typeof attachment.getAnnotations !== "function") return [];

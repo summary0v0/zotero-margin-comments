@@ -16,6 +16,7 @@ export const PDF_STYLES = `
 }
 
 .zmc-page-overlay {
+  transform-origin: 0 0;
   position: absolute;
   overflow: visible;
   pointer-events: none;
@@ -34,14 +35,12 @@ export const PDF_STYLES = `
   stroke-linecap: round;
   stroke-linejoin: round;
   opacity: .72;
-  vector-effect: non-scaling-stroke;
   transition: opacity .14s ease, stroke-width .14s ease, filter .14s ease;
 }
 
 .zmc-line-dot {
   stroke: white;
   stroke-width: 1;
-  vector-effect: non-scaling-stroke;
   transition: filter .14s ease, r .14s ease;
 }
 
@@ -144,7 +143,7 @@ export const PDF_STYLES = `
   background: color-mix(in srgb, Canvas 96%, var(--zmc-color) 4%);
   color: CanvasText;
   box-shadow: 0 1px 4px rgba(0, 0, 0, .16);
-  font: 12.5px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: var(--zmc-font-size, 12.5px)/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   pointer-events: auto;
   transition: border-color .12s ease, box-shadow .12s ease, transform .12s ease;
 }
@@ -383,38 +382,6 @@ export const PDF_STYLES = `
   display: none;
 }
 
-.zmc-low-zoom .zmc-card:not(.zmc-editing) {
-  min-height: 0;
-  padding-top: 5px;
-  padding-bottom: 5px;
-}
-
-.zmc-low-zoom .zmc-card:not(.zmc-editing) .zmc-card-preview {
-  display: block;
-  max-height: calc(1.45em + 8px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.zmc-low-zoom .zmc-card-preview.zmc-markdown :not(.zmc-math, .zmc-math *) {
-  display: inline;
-  margin: 0;
-  padding: 0;
-  font: inherit;
-  white-space: nowrap;
-}
-
-.zmc-low-zoom .zmc-card-preview .zmc-math {
-  max-height: 1em;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  vertical-align: middle;
-}
-.zmc-low-zoom .zmc-card-preview .zmc-math-display { display: inline-block; }
-.zmc-low-zoom .zmc-card-preview .zmc-math math { display: inline math; math-style: compact; }
-
 .zmc-card-footer {
   display: flex;
   align-items: center;
@@ -435,6 +402,67 @@ export const PDF_STYLES = `
 
 .zmc-save-state[data-error="true"] {
   color: #c83c36;
+}
+
+.zmc-inline-image {
+  display: block;
+  max-width: 100%;
+  margin: 6px 0;
+}
+.zmc-inline-image img {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  cursor: zoom-in;
+}
+.zmc-inline-image img[hidden], .zmc-image-message[hidden] { display: none; }
+.zmc-image-message { color: color-mix(in srgb, CanvasText 58%, transparent); font-size: 11px; }
+.zmc-image-missing .zmc-image-message { color: #bd6335; }
+.zmc-card.zmc-has-images .zmc-card-preview:not(.zmc-preview-hidden) {
+  display: block;
+  max-height: 260px;
+  -webkit-line-clamp: unset;
+  line-clamp: unset;
+}
+.zmc-no-collapse .zmc-card.zmc-has-images .zmc-card-preview:not(.zmc-preview-hidden) { max-height: none; }
+.zmc-no-collapse .zmc-card-preview .zmc-inline-image img { max-height: none; }
+.zmc-editor-images { display: none; }
+.zmc-editing .zmc-editor-images:not(:empty) { display: block; padding: 3px 4px; }
+.zmc-editor-images .zmc-inline-image img { max-height: 160px; }
+.zmc-insert-image {
+  display: none;
+  border: 1px solid color-mix(in srgb, CanvasText 25%, transparent);
+  border-radius: 4px;
+  padding: 2px 7px;
+  background: Canvas;
+  color: CanvasText;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.zmc-editing .zmc-insert-image:not([hidden]) { display: inline-block; }
+.zmc-editing .zmc-card-footer:has(.zmc-save-state:empty) { display: flex; }
+.zmc-image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  background: rgba(0, 0, 0, .78);
+  pointer-events: auto;
+}
+.zmc-image-lightbox > img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.zmc-image-lightbox > button {
+  position: absolute;
+  top: 12px;
+  right: 18px;
+  padding: 6px 12px;
+  cursor: pointer;
 }
 
 @media (prefers-color-scheme: dark) {

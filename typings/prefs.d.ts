@@ -16,6 +16,7 @@ declare namespace _ZoteroTypes {
       "compactNoteIcons": boolean;
       "collapseNotes": boolean;
       "cardWidth": number;
+      "fontSize": string;
     };
   }
 }

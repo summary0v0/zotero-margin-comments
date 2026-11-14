@@ -7,12 +7,16 @@ import { AnnotationStore } from "./annotation-store";
 import { ReaderSession } from "./reader-session";
 import { TOOLBAR_STYLES } from "./styles";
 import { normalizeCardWidth, PREFERRED_CARD_WIDTH } from "../core/page-whitespace";
+import { DEFAULT_FONT_SIZE, MIN_FONT_SIZE, MAX_FONT_SIZE, normalizeFontSize } from "../core/font-size";
 
 const TOOLBAR_STYLE_ID = "zmc-toolbar-styles";
 const PREFERENCE_PANE_ROOT_ID = "zotero-prefpane-margincomments";
 const COMPACT_NOTE_SETTING_SELECTOR = '[data-zmc-setting="compact-note-icons"]';
 const COLLAPSE_NOTES_SETTING_SELECTOR = '[data-zmc-setting="collapse-notes"]';
 const CARD_WIDTH_SETTING_SELECTOR = '[data-zmc-setting="card-width"]';
+const CARD_WIDTH_SLIDER_SELECTOR = '[data-zmc-setting="card-width-slider"]';
+const FONT_SIZE_SETTING_SELECTOR = '[data-zmc-setting="font-size"]';
+const FONT_SIZE_SLIDER_SELECTOR = '[data-zmc-setting="font-size-slider"]';
 
 export class PluginController {
   private readonly store = new AnnotationStore();
@@ -22,6 +26,7 @@ export class PluginController {
   private compactNoteIcons = false;
   private collapseNotes = true;
   private cardWidth = PREFERRED_CARD_WIDTH;
+  private fontSize = DEFAULT_FONT_SIZE;
   private preferencePaneID?: string;
   private notifierID?: string;
   private enabled = true;
@@ -68,6 +73,7 @@ export class PluginController {
     this.compactNoteIcons = this.readCompactNoteIconsPreference();
     this.collapseNotes = this.readCollapseNotesPreference();
     this.cardWidth = this.readCardWidthPreference();
+    this.fontSize = this.readFontSizePreference();
 
     await this.registerPreferencePane();
 
@@ -169,8 +175,53 @@ export class PluginController {
       widthInput.value = String(this.cardWidth);
       if (widthInput.dataset.zmcBound !== "true") {
         widthInput.dataset.zmcBound = "true";
+        widthInput.addEventListener("input", () => {
+          const value = widthInput.valueAsNumber;
+          // Let partial numbers be typed without resetting the input mid-edit.
+          if (value >= 200 && value <= 640) this.setCardWidth(value);
+        });
         widthInput.addEventListener("change", () => this.setCardWidth(widthInput.valueAsNumber));
       }
+    }
+    const slider = root.querySelector<HTMLInputElement>(CARD_WIDTH_SLIDER_SELECTOR);
+    if (slider) {
+      slider.value = String(this.cardWidth);
+      if (slider.dataset.zmcBound !== "true") {
+        slider.dataset.zmcBound = "true";
+        slider.addEventListener("input", () => this.setCardWidth(slider.valueAsNumber));
+      }
+    }
+    const reset = root.querySelector<HTMLButtonElement>('[data-zmc-setting="card-width-reset"]');
+    if (reset && reset.dataset.zmcBound !== "true") {
+      reset.dataset.zmcBound = "true";
+      reset.addEventListener("click", () => this.setCardWidth(PREFERRED_CARD_WIDTH));
+    }
+    const fontInput = root.querySelector<HTMLInputElement>(FONT_SIZE_SETTING_SELECTOR);
+    if (fontInput) {
+      fontInput.value = String(this.fontSize);
+      if (fontInput.dataset.zmcBound !== "true") {
+        fontInput.dataset.zmcBound = "true";
+        fontInput.addEventListener("input", () => {
+          const value = fontInput.valueAsNumber;
+          if (value >= MIN_FONT_SIZE && value <= MAX_FONT_SIZE && Number.isInteger(value * 2)) {
+            this.setFontSize(value);
+          }
+        });
+        fontInput.addEventListener("change", () => this.setFontSize(fontInput.valueAsNumber));
+      }
+    }
+    const fontSlider = root.querySelector<HTMLInputElement>(FONT_SIZE_SLIDER_SELECTOR);
+    if (fontSlider) {
+      fontSlider.value = String(this.fontSize);
+      if (fontSlider.dataset.zmcBound !== "true") {
+        fontSlider.dataset.zmcBound = "true";
+        fontSlider.addEventListener("input", () => this.setFontSize(fontSlider.valueAsNumber));
+      }
+    }
+    const fontReset = root.querySelector<HTMLButtonElement>('[data-zmc-setting="font-size-reset"]');
+    if (fontReset && fontReset.dataset.zmcBound !== "true") {
+      fontReset.dataset.zmcBound = "true";
+      fontReset.addEventListener("click", () => this.setFontSize(DEFAULT_FONT_SIZE));
     }
   }
 
@@ -182,6 +233,7 @@ export class PluginController {
       existing.setCompactNoteIcons(this.compactNoteIcons);
       existing.setCollapseNotes(this.collapseNotes);
       existing.setCardWidth(this.cardWidth);
+      existing.setFontSize(this.fontSize);
       await existing.start(this.enabled);
       return existing;
     }
@@ -191,6 +243,7 @@ export class PluginController {
     session.setCompactNoteIcons(this.compactNoteIcons);
     session.setCollapseNotes(this.collapseNotes);
     session.setCardWidth(this.cardWidth);
+    session.setFontSize(this.fontSize);
     this.sessions.set(reader, session);
     try {
       await session.start(this.enabled);
@@ -279,6 +332,22 @@ export class PluginController {
       (Zotero.Prefs as any).set(`${config.prefsPrefix}.cardWidth`, this.cardWidth, true);
     } catch (error) { (Zotero as any).logError?.(error); }
     for (const session of this.sessions.values()) session.setCardWidth(this.cardWidth);
+    this.syncPreferenceCheckboxes();
+  }
+
+  private readFontSizePreference(): number {
+    try {
+      return normalizeFontSize((Zotero.Prefs as any).get(`${config.prefsPrefix}.fontSize`, true));
+    } catch { return DEFAULT_FONT_SIZE; }
+  }
+
+  private setFontSize(value: number): void {
+    this.fontSize = normalizeFontSize(value);
+    try {
+      // Gecko preferences support integers, so store fractional pixels as text.
+      (Zotero.Prefs as any).set(`${config.prefsPrefix}.fontSize`, String(this.fontSize), true);
+    } catch (error) { (Zotero as any).logError?.(error); }
+    for (const session of this.sessions.values()) session.setFontSize(this.fontSize);
     this.syncPreferenceCheckboxes();
   }
 
@@ -422,6 +491,13 @@ export class PluginController {
       if (collapseNotesCheckbox) collapseNotesCheckbox.checked = this.collapseNotes;
       const widthInput = root.querySelector<HTMLInputElement>(CARD_WIDTH_SETTING_SELECTOR);
       if (widthInput) widthInput.value = String(this.cardWidth);
+      const slider = root.querySelector<HTMLInputElement>(CARD_WIDTH_SLIDER_SELECTOR);
+      if (slider) slider.value = String(this.cardWidth);
+      const fontInput = root.querySelector<HTMLInputElement>(FONT_SIZE_SETTING_SELECTOR);
+      // Avoid rewriting the active numeric control while a decimal is typed.
+      if (fontInput && fontInput.valueAsNumber !== this.fontSize) fontInput.value = String(this.fontSize);
+      const fontSlider = root.querySelector<HTMLInputElement>(FONT_SIZE_SLIDER_SELECTOR);
+      if (fontSlider) fontSlider.value = String(this.fontSize);
     }
   }
 

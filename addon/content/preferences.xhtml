@@ -1,6 +1,8 @@
-<vbox id="zotero-prefpane-margincomments"
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml"
+      id="zotero-prefpane-margincomments"
       onload="Zotero.MarginComments.controller.registerPreferencePaneWindow(window)">
-  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,宽度,缩小,笔记,折叠,展开,Markdown">
+  <groupbox data-search-strings-raw="页边批注,旁注,批注类型,高亮,下划线,划线,便签,文字,图片,区域,图标,尺寸,宽度,字体,字号,缩小,笔记,折叠,展开,Markdown">
     <label>
       <html:h2 class="zmc-prefs-heading">旁注显示</html:h2>
     </label>
@@ -57,13 +59,28 @@
       <html:h2 class="zmc-prefs-heading">阅读器外观</html:h2>
     </label>
     <html:div class="zmc-prefs-width-row">
-      <html:label for="zmc-prefs-card-width">批注卡片宽度</html:label>
-      <html:input id="zmc-prefs-card-width" type="number" min="200" max="640" step="20"
+      <html:label for="zmc-prefs-card-width">注释框宽度</html:label>
+      <html:input type="range" min="200" max="640" step="1" aria-label="注释框宽度"
+                  data-zmc-setting="card-width-slider" aria-describedby="zmc-prefs-width-help" />
+      <html:input id="zmc-prefs-card-width" type="number" min="200" max="640" step="1"
                   data-zmc-setting="card-width" aria-describedby="zmc-prefs-width-help" />
       <html:span>px</html:span>
+      <html:button type="button" data-zmc-setting="card-width-reset">恢复默认</html:button>
     </html:div>
     <description id="zmc-prefs-width-help" class="zmc-prefs-description">
-      默认 360px，可设为 200–640px。卡片靠近正文放置，超出纸张边缘的部分向外延伸，缩放 PDF 时保持所设宽度。
+      设置 PDF 100% 时的注释框宽度，默认 360px，可调整为 200–640px。修改后自动保存并立即应用于已打开的 PDF；缩放时卡片、文字、图片和引线随页面等比缩放，保持相对布局。
+    </description>
+    <html:div class="zmc-prefs-width-row">
+      <html:label for="zmc-prefs-font-size">批注字号</html:label>
+      <html:input type="range" min="8" max="32" step="0.5" aria-label="批注字号"
+                  data-zmc-setting="font-size-slider" aria-describedby="zmc-prefs-font-size-help" />
+      <html:input id="zmc-prefs-font-size" type="number" min="8" max="32" step="0.5"
+                  data-zmc-setting="font-size" aria-describedby="zmc-prefs-font-size-help" />
+      <html:span>px</html:span>
+      <html:button type="button" data-zmc-setting="font-size-reset">恢复默认</html:button>
+    </html:div>
+    <description id="zmc-prefs-font-size-help" class="zmc-prefs-description">
+      设置 PDF 100% 时的批注文字大小，默认 12.5px，范围 8–32px，每次调整 0.5px。预览与编辑文字同步更新，Markdown 标题和公式按比例调整；修改后自动保存，缩放 PDF 时字号随页面等比缩放。
     </description>
     <html:label class="zmc-prefs-option-row" for="zmc-prefs-collapse-notes">
       <html:input id="zmc-prefs-collapse-notes"
@@ -72,7 +89,7 @@
                   preference="extensions.zotero.margincomments.collapseNotes" />
       <html:span>
         <html:strong>自动折叠笔记</html:strong>
-        <html:small>开启后三行预览，低缩放时显示一行，并收起同页放不下的评论。</html:small>
+        <html:small>开启后三行预览，并收起同页放不下的评论；缩放不会切换预览行数。</html:small>
         <html:small>关闭后显示完整内容；超出页面高度时可在页边栏内滚动阅读。</html:small>
       </html:span>
     </html:label>

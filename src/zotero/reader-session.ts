@@ -8,6 +8,8 @@ import {
   type PositionedLayoutItem,
 } from "../core/margin-layout";
 import { assignMarginSides, canUseEitherMargin } from "../core/margin-side";
+import { imageMarkdown } from "../core/image-reference";
+import { DEFAULT_FONT_SIZE, normalizeFontSize } from "../core/font-size";
 import {
   placeMarginInWhitespace,
   normalizeCardWidth,
@@ -22,7 +24,10 @@ import {
   type PageAnchor,
 } from "../core/types";
 import { AnnotationStore } from "./annotation-store";
-import { renderMarkdownComment } from "./markdown-preview";
+import { renderCommentImages, renderMarkdownComment } from "./markdown-preview";
+import { ImageAssets, copyImageBytes, type ImportedImage, type ImageCleanupResult } from "./image-assets";
+import { renderAssetImage, openImageLightbox } from "./image-preview";
+import { captureEditorRange, insertImageText } from "./image-insertion";
 import {
   readStoredComment,
   renderStoredComment,
@@ -36,7 +41,6 @@ import { PDF_STYLES } from "./styles";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 const STYLE_ID = "zmc-pdf-styles";
-const COLLAPSE_SCALE_THRESHOLD = 0.8;
 const LAYOUT_PADDING = 8;
 const CARD_GAP = 8;
 const SUMMARY_HEIGHT = 34;
@@ -51,11 +55,16 @@ interface CardRuntime {
   card: HTMLElement;
   preview: HTMLDivElement;
   editor: HTMLElement;
+  imagePreview: HTMLElement;
   state: HTMLElement;
   originalValue: string;
   currentValue: string;
   dirty: boolean;
   saving: boolean;
+  pendingImages: number;
+  imageEpoch: number;
+  closeAfterImage?: boolean;
+  cleanupHold?: () => void;
   measuredHeight?: number;
   heightMode?: string;
   timer?: ReturnType<typeof setTimeout>;
@@ -71,6 +80,7 @@ interface MountedPage {
   runtimes: CardRuntime[];
   positions: Map<string, PositionedLayoutItem>;
   whitespace?: PageWhitespace;
+  pendingWhitespace?: PageWhitespace;
   whitespaceRotation?: number;
   whitespaceRequested?: boolean;
 }
@@ -86,6 +96,9 @@ interface MarginColumnRuntime {
 
 export class ReaderSession {
   private readonly adapter: Zotero9ReaderAdapter;
+  private readonly images: ImageAssets;
+  private closeLightbox?: () => void;
+  private imageCleanup?: Promise<ImageCleanupResult>;
   private readonly forcedKeys = new Set<string>();
   private readonly mountedPages = new Map<number, MountedPage>();
   private readonly expandedMargins = new Set<string>();
@@ -102,6 +115,7 @@ export class ReaderSession {
   private compactNoteIcons = false;
   private collapseNotes = true;
   private cardWidth = PREFERRED_CARD_WIDTH;
+  private fontSize = DEFAULT_FONT_SIZE;
   private enabled = true;
   private started = false;
   private adapterReady = false;
@@ -122,6 +136,7 @@ export class ReaderSession {
     private readonly onStateChange: () => void,
   ) {
     this.adapter = new Zotero9ReaderAdapter(reader);
+    this.images = new ImageAssets(this.attachmentID);
   }
 
   get attachmentID(): number {
@@ -188,6 +203,16 @@ export class ReaderSession {
     if (this.enabled && this.adapterReady) this.render();
   }
 
+  setFontSize(value: number): void {
+    const size = normalizeFontSize(value);
+    if (size === this.fontSize) return;
+    this.fontSize = size;
+    if (this.enabled && this.adapterReady) {
+      // Relayout existing cards without replacing a draft or its DOM selection.
+      for (const mounted of this.mountedPages.values()) this.layoutPage(mounted);
+    }
+  }
+
   async reveal(keys: readonly string[]): Promise<void> {
     keys.forEach((key) => this.forcedKeys.add(String(key)));
     if (!this.enabled) this.setEnabled(true);
@@ -241,6 +266,7 @@ export class ReaderSession {
     this.centerFramesRemaining = 0;
     this.removeUi();
     this.marginSides.clear();
+    this.images.clear();
     this.adapter.destroy();
   }
 
@@ -252,10 +278,21 @@ export class ReaderSession {
       this.cancelRenderFrame = undefined;
       if (this.hasBlockingEditor()) {
         this.pendingRefresh = true;
-        this.renderFramesRemaining = 0;
-        return;
+        // Keep drafts and side choices while tracking PDF zoom immediately.
+        for (const mounted of this.mountedPages.values()) {
+          const handle = this.adapter.page(mounted.handle.pageIndex);
+          if (!handle || handle.element !== mounted.handle.element) continue;
+          mounted.handle = handle;
+          for (const runtime of mounted.runtimes) {
+            runtime.anchor = this.annotationAnchorForHandle(
+              runtime.annotation, handle, runtime.anchor.side,
+            ) ?? runtime.anchor;
+          }
+          this.layoutPage(mounted);
+        }
+      } else {
+        this.render();
       }
-      this.render();
       if (this.centerFramesRemaining) {
         this.adapter.centerCurrentPageHorizontally();
         this.centerFramesRemaining = Math.max(0, this.centerFramesRemaining - 1);
@@ -343,6 +380,12 @@ export class ReaderSession {
       if (ids.length === 1) this.setActive(ids[0]);
     });
     await this.refresh(true);
+    if (!this.destroyed && typeof this.store.listAllComments === "function") {
+      this.imageCleanup = this.images.cleanupUnused(
+        () => this.store.listAllComments(this.attachmentID), () => !this.destroyed,
+      );
+      void this.imageCleanup.catch((error) => (Zotero as any).logError?.(error));
+    }
     this.onStateChange();
   }
 
@@ -370,7 +413,6 @@ export class ReaderSession {
     };
     overlay.className = "zmc-page-overlay";
     overlay.classList.toggle("zmc-no-collapse", !this.collapseNotes);
-    overlay.classList.toggle("zmc-low-zoom", this.collapseNotes && handle.scale < COLLAPSE_SCALE_THRESHOLD);
     lines.classList.add("zmc-line-layer");
     cards.className = "zmc-card-layer";
     cards.append(columns.left.root, columns.right.root);
@@ -427,10 +469,10 @@ export class ReaderSession {
     }
 
     mounted.handle = handle;
-    mounted.overlay.classList.toggle(
-      "zmc-low-zoom",
-      this.collapseNotes && handle.scale < COLLAPSE_SCALE_THRESHOLD,
-    );
+    if (mounted.pendingWhitespace) {
+      mounted.whitespace = mounted.pendingWhitespace;
+      mounted.pendingWhitespace = undefined;
+    }
     mounted.overlay.classList.toggle("zmc-no-collapse", !this.collapseNotes);
     for (const runtime of mounted.runtimes) {
       const entry = byKey.get(runtime.annotation.key)!;
@@ -476,6 +518,8 @@ export class ReaderSession {
         runtime.measuredHeight = undefined;
       }
       if (wasReadOnly !== entry.annotation.readOnly) {
+        const button = runtime.card.querySelector<HTMLButtonElement>(".zmc-insert-image");
+        if (button) button.hidden = entry.annotation.readOnly;
         runtime.state.textContent = entry.annotation.readOnly ? "只读" : "";
         runtime.measuredHeight = undefined;
       }
@@ -539,6 +583,8 @@ export class ReaderSession {
     const editor = doc.createElement("div");
     const footer = doc.createElement("footer");
     const state = doc.createElement("span");
+    const imagePreview = doc.createElement("div");
+    const insertImage = doc.createElement("button");
 
     card.className = `zmc-card zmc-card-${anchor.side}`;
     card.dataset.annotationKey = annotation.key;
@@ -564,9 +610,14 @@ export class ReaderSession {
     footer.className = "zmc-card-footer";
     state.className = "zmc-save-state";
     state.textContent = annotation.readOnly ? "只读" : "";
+    imagePreview.className = "zmc-editor-images";
+    insertImage.className = "zmc-insert-image";
+    insertImage.type = "button";
+    insertImage.textContent = "插入图片";
+    insertImage.hidden = annotation.readOnly;
 
-    footer.append(state);
-    card.append(preview, editor, footer);
+    footer.append(state, insertImage);
+    card.append(preview, editor, imagePreview, footer);
 
     const runtime: CardRuntime = {
       annotation,
@@ -574,11 +625,14 @@ export class ReaderSession {
       card,
       preview,
       editor,
+      imagePreview,
       state,
       originalValue: annotation.comment,
       currentValue: annotation.comment,
       dirty: false,
       saving: false,
+      pendingImages: 0,
+      imageEpoch: 0,
     };
     this.updatePreview(runtime);
     card.classList.toggle("zmc-hovered", this.hoveredKey === annotation.key);
@@ -592,6 +646,7 @@ export class ReaderSession {
       this.adapter.selectAnnotation(runtime.annotation.key);
     });
     preview.addEventListener("click", (event) => {
+      if (this.openClickedImage(event, preview)) return;
       const link = (event.target as Element).closest?.("a[href]");
       if (link && preview.contains(link)) {
         event.preventDefault();
@@ -653,7 +708,46 @@ export class ReaderSession {
       if (copied || event.clipboardData) event.preventDefault();
     });
     editor.addEventListener("cut", (event) => event.stopPropagation());
-    editor.addEventListener("paste", (event) => event.stopPropagation());
+    editor.addEventListener("paste", (event) => {
+      event.stopPropagation();
+      if (runtime.annotation.readOnly) return;
+      const items = Array.from(event.clipboardData?.items ?? []);
+      let files = items.filter((item) => item.kind === "file" && /^image\//i.test(item.type))
+        .map((item) => item.getAsFile()).filter((file): file is File => !!file);
+      if (!files.length) files = Array.from(event.clipboardData?.files ?? []).filter((file) => /^image\//i.test(file.type));
+      const types = Array.from(event.clipboardData?.types ?? []);
+      const nativePNG = !files.length && event.isTrusted && !types.some((type) => /^text\//i.test(type))
+        ? this.images.readClipboardPNG() : undefined;
+      if (!files.length && !nativePNG) return;
+      event.preventDefault();
+      const range = captureEditorRange(editor);
+      void this.insertImages(runtime, range, async () => {
+        const images: ImportedImage[] = [];
+        if (nativePNG) images.push(await this.images.importBytes(nativePNG, "粘贴图片.png"));
+        for (const file of files) {
+          images.push(await this.images.importBytes(copyImageBytes(await file.arrayBuffer()), file.name || "粘贴图片"));
+        }
+        return images;
+      });
+    });
+    imagePreview.addEventListener("click", (event) => this.openClickedImage(event, imagePreview));
+    for (const name of ["pointerdown", "mousedown"]) {
+      insertImage.addEventListener(name, (event) => { event.preventDefault(); event.stopPropagation(); });
+    }
+    insertImage.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const range = captureEditorRange(editor);
+      const epoch = runtime.imageEpoch;
+      void this.insertImages(runtime, range, async () => {
+        const path = await this.images.pickFile();
+        if (this.isImageTargetCurrent(runtime, epoch)) {
+          runtime.closeAfterImage = false;
+          editor.focus({ preventScroll: true });
+        }
+        return path ? [await this.images.importFile(path)] : [];
+      });
+    });
     editor.addEventListener("input", () => {
       if (runtime.annotation.readOnly) return;
       runtime.currentValue = this.readComment(editor);
@@ -709,16 +803,27 @@ export class ReaderSession {
         void this.persist(runtime).then(() => editor.blur());
       }
     });
-    editor.addEventListener("blur", () => {
+    const finishEditing = () => {
+      if (runtime.pendingImages) {
+        runtime.closeAfterImage = true;
+        return;
+      }
       void this.persist(runtime).finally(() => {
         this.closeEditor(runtime, pageIndex);
         this.flushPendingRefresh();
       });
+    };
+    editor.addEventListener("blur", (event) => {
+      if (event.relatedTarget !== insertImage) finishEditing();
+    });
+    insertImage.addEventListener("blur", (event) => {
+      if (event.relatedTarget !== editor) finishEditing();
     });
     return runtime;
   }
 
   private layoutPage(mounted: MountedPage): void {
+    mounted.overlay.style.setProperty("--zmc-font-size", `${this.fontSize}px`);
     this.positionOverlay(mounted);
     this.requestWhitespace(mounted);
     const { width, height } = this.pageDimensions(mounted.handle);
@@ -945,7 +1050,7 @@ export class ReaderSession {
   private async persist(runtime: CardRuntime): Promise<void> {
     if (runtime.timer) clearTimeout(runtime.timer);
     runtime.timer = undefined;
-    if (!runtime.dirty || runtime.saving || runtime.annotation.readOnly) return;
+    if (!runtime.dirty || runtime.saving || runtime.annotation.readOnly || runtime.pendingImages) return;
 
     const value = runtime.currentValue;
     runtime.saving = true;
@@ -978,12 +1083,19 @@ export class ReaderSession {
       (Zotero as any).logError?.(error);
     } finally {
       runtime.saving = false;
+      if (!runtime.dirty && !runtime.card.classList.contains("zmc-editing")) {
+        runtime.cleanupHold?.();
+        runtime.cleanupHold = undefined;
+      }
       if (runtime.dirty && runtime.currentValue !== value) this.queueSave(runtime);
       this.flushPendingRefresh();
     }
   }
 
   private cancelEdit(runtime: CardRuntime): void {
+    runtime.imageEpoch += 1;
+    runtime.pendingImages = 0;
+    runtime.closeAfterImage = false;
     if (runtime.timer) clearTimeout(runtime.timer);
     runtime.timer = undefined;
     runtime.currentValue = runtime.originalValue;
@@ -1006,6 +1118,7 @@ export class ReaderSession {
 
   private openEditor(runtime: CardRuntime, selectAll = false): void {
     if (runtime.annotation.readOnly) return;
+    runtime.cleanupHold ??= this.images.holdCleanup();
     if (!runtime.card.classList.contains("zmc-editing")) {
       // Markdown source can occupy fewer lines than its rendered preview.
       // Keep that reading space when switching modes, then let the editable
@@ -1026,6 +1139,10 @@ export class ReaderSession {
     runtime.editor.classList.add("zmc-editor-hidden");
     runtime.preview.classList.remove("zmc-preview-hidden");
     runtime.editor.style.removeProperty("min-height");
+    if (!runtime.dirty && !runtime.saving && !runtime.pendingImages) {
+      runtime.cleanupHold?.();
+      runtime.cleanupHold = undefined;
+    }
     const mounted = this.mountedPages.get(pageIndex);
     if (mounted) this.layoutPage(mounted);
   }
@@ -1034,15 +1151,89 @@ export class ReaderSession {
     const value = runtime.currentValue;
     if (value) {
       try {
-        renderMarkdownComment(runtime.preview, value);
+        const options = { image: (reference: string, alt: string) => renderAssetImage(
+          runtime.preview.ownerDocument, this.images, reference, alt,
+          () => {
+            if (!runtime.card.isConnected) return;
+            runtime.measuredHeight = undefined;
+            this.relayoutRuntime(runtime);
+          },
+        ) };
+        renderMarkdownComment(runtime.preview, value, options);
+        if (runtime.preview.querySelector(".zmc-inline-image")) renderCommentImages(runtime.imagePreview, value, options);
+        else runtime.imagePreview.replaceChildren();
       } catch (error) {
         runtime.preview.textContent = value;
         (Zotero as any).logError?.(error);
       }
     } else {
       runtime.preview.textContent = runtime.editor.dataset.placeholder ?? "";
+      runtime.imagePreview.replaceChildren();
     }
+    runtime.card.classList.toggle("zmc-has-images", !!runtime.preview.querySelector(".zmc-inline-image"));
     runtime.preview.classList.toggle("zmc-empty-preview", !value);
+  }
+
+  private isImageTargetCurrent(runtime: CardRuntime, epoch: number): boolean {
+    return !this.destroyed && this.enabled && runtime.card.isConnected
+      && runtime.imageEpoch === epoch && !runtime.annotation.readOnly;
+  }
+
+  private async insertImages(
+    runtime: CardRuntime, range: Range, produce: () => Promise<ImportedImage[]>,
+  ): Promise<void> {
+    const epoch = runtime.imageEpoch;
+    if (!this.isImageTargetCurrent(runtime, epoch)) return;
+    const releaseCleanup = this.images.holdCleanup();
+    runtime.pendingImages += 1;
+    if (runtime.timer) clearTimeout(runtime.timer);
+    runtime.timer = undefined;
+    if (runtime.statusTimer) clearTimeout(runtime.statusTimer);
+    runtime.statusTimer = undefined;
+    runtime.state.dataset.error = "false";
+    runtime.state.textContent = "正在插入图片…";
+    try {
+      const images = await produce();
+      if (!this.isImageTargetCurrent(runtime, epoch)) return;
+      if (images.length) {
+        const text = images.map((image) => imageMarkdown(image.reference, image.name)).join("\n");
+        if (!insertImageText(runtime.editor, range, `\n${text}\n`)) throw new Error("插入位置已失效，请重新粘贴图片");
+        // Some Gecko execCommand paths emit input themselves; repeat reading is harmless.
+        const input = runtime.editor.ownerDocument.createEvent("Event");
+        input.initEvent("input", true, false);
+        runtime.editor.dispatchEvent(input);
+      } else runtime.state.textContent = "";
+    } catch (error) {
+      if (this.isImageTargetCurrent(runtime, epoch)) {
+        runtime.state.dataset.error = "true";
+        runtime.state.textContent = `插入图片失败：${(error as Error)?.message || "无法保存图片"}`;
+      }
+      (Zotero as any).logError?.(error);
+    } finally {
+      releaseCleanup();
+      if (!this.destroyed && runtime.card.isConnected && runtime.imageEpoch === epoch) {
+        runtime.pendingImages = Math.max(0, runtime.pendingImages - 1);
+        if (!runtime.pendingImages) {
+          if (runtime.closeAfterImage) {
+            runtime.closeAfterImage = false;
+            await this.persist(runtime);
+            this.closeEditor(runtime, runtime.annotation.position.pageIndex);
+            this.flushPendingRefresh();
+          } else if (runtime.dirty) this.queueSave(runtime);
+          else if (runtime.state.dataset.error !== "true") runtime.state.textContent = "";
+        }
+      }
+    }
+  }
+
+  private openClickedImage(event: MouseEvent, root: HTMLElement): boolean {
+    const image = (event.target as Element).closest?.(".zmc-inline-image img") as HTMLImageElement | null;
+    if (!image || image.hidden || !root.contains(image)) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    this.closeLightbox?.();
+    this.closeLightbox = openImageLightbox(root.ownerDocument, image);
+    return true;
   }
 
   private renderComment(root: HTMLElement, value: string): void {
@@ -1082,7 +1273,7 @@ export class ReaderSession {
     mounted: MountedPage,
   ): number {
     const mode = [
-      mounted.overlay.classList.contains("zmc-low-zoom") ? "low" : "normal",
+      String(this.fontSize),
       this.collapseNotes ? "collapsed" : "full",
       runtime.card.classList.contains("zmc-editing") ? "editing" : "preview",
       runtime.state.textContent ? "status" : "plain",
@@ -1090,7 +1281,7 @@ export class ReaderSession {
       mounted.columns[runtime.anchor.side].placement.mode,
     ].join(":");
     if (runtime.measuredHeight === undefined || runtime.heightMode !== mode) {
-      runtime.measuredHeight = measureHeight(runtime.card, runtime.currentValue);
+      runtime.measuredHeight = measureHeight(runtime.card, runtime.currentValue, this.pageScale(mounted.handle).y);
       runtime.heightMode = mode;
     }
     return runtime.measuredHeight;
@@ -1142,7 +1333,10 @@ export class ReaderSession {
   private hasBlockingEditor(): boolean {
     return this.cardRuntimes().some(
       (runtime) =>
-        runtime.saving || runtime.editor.ownerDocument.activeElement === runtime.editor,
+        runtime.saving || runtime.pendingImages > 0 || (
+          runtime.card.classList.contains("zmc-editing")
+          && runtime.card.contains(runtime.editor.ownerDocument.activeElement)
+        ),
     );
   }
 
@@ -1167,6 +1361,7 @@ export class ReaderSession {
     if (mounted.whitespaceRotation !== rotation) {
       mounted.whitespaceRotation = rotation;
       mounted.whitespace = undefined;
+      mounted.pendingWhitespace = undefined;
       mounted.whitespaceRequested = false;
     }
     if (mounted.whitespaceRequested) return;
@@ -1177,6 +1372,11 @@ export class ReaderSession {
         || this.mountedPages.get(mounted.handle.pageIndex) !== mounted
         || mounted.whitespaceRotation !== rotation
       ) return;
+      if (this.hasBlockingEditor()) {
+        mounted.pendingWhitespace = profile;
+        this.pendingRefresh = true;
+        return;
+      }
       mounted.whitespace = profile;
       this.scheduleRender(1);
     });
@@ -1187,13 +1387,14 @@ export class ReaderSession {
     let right = 0;
     for (const mounted of this.mountedPages.values()) {
       const { width } = this.pageDimensions(mounted.handle);
+      const scale = this.pageScale(mounted.handle).x;
       for (const side of ["left", "right"] as const) {
         if (!mounted.runtimes.some((runtime) =>
           runtime.anchor.side === side && !runtime.card.classList.contains("zmc-filtered"),
         )) continue;
         const placement = mounted.columns[side].placement;
-        left = Math.max(left, -placement.x);
-        right = Math.max(right, placement.x + placement.width - width);
+        left = Math.max(left, -placement.x * scale);
+        right = Math.max(right, (placement.x + placement.width - width) * scale);
       }
     }
     // Symmetric padding preserves the original PDF horizontal zoom centre.
@@ -1234,6 +1435,8 @@ export class ReaderSession {
     setPixelStyle(mounted.overlay, "top", top);
     setPixelStyle(mounted.overlay, "width", width);
     setPixelStyle(mounted.overlay, "height", height);
+    const scale = this.pageScale(mounted.handle, pageRect);
+    mounted.overlay.style.transform = `scale(${scale.x}, ${scale.y})`;
   }
 
   private preparePageAnnotations(
@@ -1303,9 +1506,22 @@ export class ReaderSession {
     handle: PdfPageHandle,
     rect = handle.element.getBoundingClientRect(),
   ): { width: number; height: number } {
+    // Lay out at PDF 100%; scale the entire layer instead of rewrapping text.
+    // Viewport geometry avoids zoom-dependent integer rounding of page boxes.
     return {
-      width: handle.element.clientWidth || rect.width || handle.viewport.width,
-      height: handle.element.clientHeight || rect.height || handle.viewport.height,
+      width: (handle.viewport.width || handle.element.clientWidth || rect.width) / handle.scale,
+      height: (handle.viewport.height || handle.element.clientHeight || rect.height) / handle.scale,
+    };
+  }
+
+  private pageScale(
+    handle: PdfPageHandle,
+    rect = handle.element.getBoundingClientRect(),
+  ): { x: number; y: number } {
+    const { width, height } = this.pageDimensions(handle, rect);
+    return {
+      x: (handle.element.clientWidth || rect.width || handle.viewport.width) / width,
+      y: (handle.element.clientHeight || rect.height || handle.viewport.height) / height,
     };
   }
 
@@ -1313,6 +1529,10 @@ export class ReaderSession {
     const mounted = this.mountedPages.get(pageIndex);
     if (!mounted) return;
     for (const runtime of mounted.runtimes) {
+      runtime.cleanupHold?.();
+      runtime.cleanupHold = undefined;
+      runtime.imageEpoch += 1;
+      runtime.pendingImages = 0;
       if (runtime.timer) clearTimeout(runtime.timer);
       if (runtime.statusTimer) clearTimeout(runtime.statusTimer);
     }
@@ -1322,6 +1542,8 @@ export class ReaderSession {
   }
 
   private removeUi(): void {
+    this.closeLightbox?.();
+    this.closeLightbox = undefined;
     for (const pageIndex of [...this.mountedPages.keys()]) this.unmountPage(pageIndex);
     try {
       this.adapter.viewerElement().classList.remove("zmc-viewer");
@@ -1345,8 +1567,8 @@ function typeLabel(type: MarginAnnotation["type"]): string {
   }[type];
 }
 
-function measureHeight(card: HTMLElement, value: string): number {
-  const measured = card.getBoundingClientRect().height || card.scrollHeight;
+function measureHeight(card: HTMLElement, value: string, scale: number): number {
+  const measured = card.getBoundingClientRect().height / scale || card.scrollHeight;
   if (measured > 0) return measured;
   return Math.min(210, Math.max(70, 54 + value.split("\n").length * 18));
 }

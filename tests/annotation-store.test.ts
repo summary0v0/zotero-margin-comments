@@ -55,4 +55,17 @@ describe("AnnotationStore", () => {
     expect(saveTx).toHaveBeenCalledOnce();
   });
 
+  it("reads cleanup references from all annotations, even unsupported types or missing positions", () => {
+    const getAnnotations = vi.fn(() => [
+      { annotationType: "ink", annotationComment: "未渲染的引用" },
+      { annotationType: "highlight", annotationComment: "被筛选的引用" },
+    ]);
+    vi.stubGlobal("Zotero", { Items: { get: () => ({ getAnnotations }) } });
+    const store = new AnnotationStore();
+    expect(store.listAllComments(7)).toEqual(["未渲染的引用", "被筛选的引用"]);
+    expect(getAnnotations).toHaveBeenCalledWith(false);
+    vi.stubGlobal("Zotero", { Items: { get: () => undefined } });
+    expect(() => store.listAllComments(7)).toThrow("全部批注");
+  });
+
 });

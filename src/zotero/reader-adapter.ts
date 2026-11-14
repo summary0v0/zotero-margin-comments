@@ -96,7 +96,7 @@ export class Zotero9ReaderAdapter {
     const element = pageView?.div as HTMLElement | undefined;
     const viewport = pageView?.viewport as ViewportLike | undefined;
     if (!element || !viewport) return undefined;
-    const rawScale = Number(this.pdfViewer?.currentScale ?? pageView?.scale ?? 1);
+    const rawScale = Number(pageView?.scale ?? this.pdfViewer?.currentScale ?? 1);
     const scale = Number.isFinite(rawScale) && rawScale > 0 ? rawScale : 1;
     return { pageIndex, element, viewport, scale };
   }

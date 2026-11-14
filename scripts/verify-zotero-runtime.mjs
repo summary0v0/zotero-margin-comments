@@ -10,10 +10,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const [executable, inputPDF] = process.argv.slice(2);
 const dragTest = process.argv.includes("--drag");
 const sideTest = process.argv.includes("--sides");
+const imageTest = process.argv.includes("--images");
+const zoomTest = process.argv.includes("--zoom");
+const nativeClipboard = process.argv.includes("--native-clipboard");
 if (!executable || !inputPDF || !fs.existsSync(executable) || !fs.existsSync(inputPDF)) {
   throw new Error("Usage: node scripts/verify-zotero-runtime.mjs <zotero.exe> <PLLaVA PDF>");
 }
-const out = path.join(root, sideTest ? "build/zotero-sides-qa" : "build/zotero-runtime-qa");
+const out = path.join(root, zoomTest ? "build/zotero-zoom-qa" : imageTest ? "build/zotero-images-qa" : sideTest ? "build/zotero-sides-qa" : "build/zotero-runtime-qa");
 const profile = path.join(out, "profile");
 const dataDirectory = path.join(out, "data");
 const addon = path.join(out, "test-addon");
@@ -24,7 +27,7 @@ const pnpm = path.join(root, "node_modules/.pnpm");
 const require = createRequire(import.meta.url);
 const esbuild = require(path.join(pnpm, fs.readdirSync(pnpm).find((n) => n.startsWith("esbuild@")), "node_modules/esbuild"));
 await esbuild.build({
-  stdin: { contents: "import {Zotero9ReaderAdapter} from './src/zotero/reader-adapter';import {ReaderSession} from './src/zotero/reader-session';import {AnnotationStore} from './src/zotero/annotation-store';globalThis.MarginAdapter=Zotero9ReaderAdapter;globalThis.MarginSession=ReaderSession;globalThis.MarginStore=AnnotationStore;", resolveDir: root, loader: "ts" },
+  stdin: { contents: "import {Zotero9ReaderAdapter} from './src/zotero/reader-adapter';import {ReaderSession} from './src/zotero/reader-session';import {AnnotationStore} from './src/zotero/annotation-store';import {PluginController} from './src/zotero/plugin-controller';globalThis.MarginAdapter=Zotero9ReaderAdapter;globalThis.MarginSession=ReaderSession;globalThis.MarginStore=AnnotationStore;globalThis.MarginController=PluginController;", resolveDir: root, loader: "ts" },
   bundle: true, platform: "browser", target: "firefox140", outfile: path.join(out, "probe.js"),
 });
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
@@ -38,12 +41,17 @@ manifest.applications.zotero.id = "margin-runtime-test@local.zotero";
 fs.writeFileSync(path.join(addon, "manifest.json"), JSON.stringify(manifest));
 fs.mkdirSync(path.join(addon, "content/icons"), { recursive: true });
 fs.copyFileSync(path.join(root, "addon/content/icons/margin-comments.svg"), path.join(addon, "content/icons/margin-comments.svg"));
+if (zoomTest) fs.copyFileSync(path.join(root, "addon/content/preferences.xhtml"), path.join(out, "preferences.xhtml"));
 const bootstrap = fs.readFileSync(path.join(root, "bench/zotero-runtime-bootstrap.js"), "utf8")
   .replace("__ZMC_QA_ROOT__", JSON.stringify(out)).replace("__ZMC_QA_INPUT__", JSON.stringify(path.resolve(inputPDF)));
 fs.writeFileSync(path.join(addon, "bootstrap.js"), bootstrap
   .replace("__ZMC_QA_DRAG__", JSON.stringify(dragTest))
   .replace("__ZMC_QA_SIDES__", JSON.stringify(sideTest))
-  + (sideTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-sides-runtime.js"), "utf8") : ""));
+  .replace("__ZMC_QA_IMAGES__", JSON.stringify(imageTest))
+  .replace("__ZMC_QA_ZOOM__", JSON.stringify(zoomTest))
+  + (sideTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-sides-runtime.js"), "utf8") : "")
+  + (imageTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-images-runtime.js"), "utf8") : "")
+  + (zoomTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-zoom-runtime.js"), "utf8") : ""));
 const testXpi = path.join(out, "test-addon.xpi");
 if (fs.existsSync(testXpi)) fs.unlinkSync(testXpi);
 const quotePS = (value) => `'${value.replaceAll("'", "''")}'`;
@@ -63,9 +71,25 @@ const prefs = {
 };
 fs.writeFileSync(path.join(profile, "user.js"), Object.entries(prefs).map(([k, v]) => `user_pref(${JSON.stringify(k)},${JSON.stringify(v)});`).join("\n"));
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
-const child = spawn(executable, ["-no-remote", "-profile", profile, "--headless", "-marionette", "--remote-allow-system-access", "-ZoteroDebugText"], { windowsHide: true, env: { ...process.env, MOZ_HEADLESS: "1" } });
-let log = "", socket;
-child.stdout.on("data", (chunk) => log += chunk);
+const appArgs = ["-no-remote", "-profile", profile, ...nativeClipboard ? [] : ["--headless"], "-marionette", "--remote-allow-system-access", "-ZoteroDebugText"];
+const appEnv = { ...process.env };
+if (nativeClipboard) delete appEnv.MOZ_HEADLESS;
+else appEnv.MOZ_HEADLESS = "1";
+// ESR 140's headless clipboard handles text/HTML only. Start the isolated GUI
+// process hidden for actual PNG paste tests and retain its PID for cleanup.
+const nativeStdout = path.join(out, "native-stdout.log");
+const nativeStderr = path.join(out, "native-stderr.log");
+const child = nativeClipboard
+  ? spawn("powershell", ["-NoProfile", "-Command",
+    `$qaProcess = Start-Process -FilePath ${quotePS(executable)} -ArgumentList @(${appArgs.map((a) => quotePS('"' + a + '"')).join(",")}) -WindowStyle Hidden -PassThru -RedirectStandardOutput ${quotePS(nativeStdout)} -RedirectStandardError ${quotePS(nativeStderr)}; Write-Output ('ZMC_PID:' + $qaProcess.Id); $qaProcess.WaitForExit(); exit $qaProcess.ExitCode`],
+    { windowsHide: true, env: appEnv })
+  : spawn(executable, appArgs, { windowsHide: true, env: appEnv });
+let log = "", socket, nativePID;
+child.stdout.on("data", (chunk) => {
+  log += chunk;
+  const match = log.match(/ZMC_PID:(\d+)/);
+  if (match) nativePID = Number(match[1]);
+});
 child.stderr.on("data", (chunk) => log += chunk);
 try {
   for (let i = 0; i < 120 && !socket; i++) {
@@ -122,6 +146,12 @@ try {
 } finally {
   socket?.destroy();
   for (let i = 0; i < 20 && child.exitCode === null; i++) await pause(100);
-  if (child.exitCode === null) child.kill();
+  if (child.exitCode === null) {
+    child.kill();
+    if (nativePID) spawnSync("taskkill", ["/PID", String(nativePID), "/T", "/F"], { windowsHide: true });
+  }
+  for (const file of nativeClipboard ? [nativeStdout, nativeStderr] : []) {
+    if (fs.existsSync(file)) log += fs.readFileSync(file, "utf8");
+  }
   fs.writeFileSync(path.join(out, "runtime.log"), log);
 }
