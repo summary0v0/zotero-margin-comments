@@ -13,7 +13,7 @@
   <a href="https://github.com/XiaoDuComrade/zotero-margin-comments">
     <img src="https://img.shields.io/badge/Zotero-9.0.x%20%7C%2010.0.x-CC2936?style=flat-square&logo=zotero&logoColor=white" alt="Zotero 9.0.x / 10.0.x">
   </a>
-  <img src="https://img.shields.io/badge/version-0.11.2-4A78C2?style=flat-square" alt="Version 0.11.2">
+  <img src="https://img.shields.io/badge/version-0.11.3-4A78C2?style=flat-square" alt="Version 0.11.3">
   <img src="https://img.shields.io/badge/TypeScript-5.8-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript 5.8">
   <a href="./LICENSE">
     <img src="https://img.shields.io/github/license/XiaoDuComrade/zotero-margin-comments?style=flat-square" alt="MIT License">
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  <a href="./releases/margin-comments-0.11.2.xpi?raw=1"><strong>⬇️ 下载 0.11.2</strong></a>
+  <a href="./releases/margin-comments-0.11.3.xpi?raw=1"><strong>⬇️ 下载 0.11.3</strong></a>
   ·
   <a href="#安装">安装</a>
   ·
@@ -84,6 +84,7 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 - 长笔记进入编辑后保留展开高度，编辑框随内容自然增长，超出页高时通过页边栏滚动。
 - 展开密集评论后，只绘制当前边栏视野内卡片的引线。
 - 点击卡片会选中并定位原批注；点击原批注会高亮对应卡片。
+- 点击卡片文字进入编辑时，光标定位到点击处对应的原文，避免总回到第一行；点击公式会定位到该公式的 LaTeX 原文开头。
 - `Ctrl/Cmd + Enter` 立即保存，`Esc` 取消尚未保存的编辑。
 - 编辑笔记时，`Tab` 在光标处插入 4 个空格；选中文字后可整行批量缩进，`Shift + Tab` 取消当前行或选中行的一级缩进。保存和重新打开后保留缩进。
 - 批注右键菜单提供“在页边显示/编辑评论”，可为尚无评论的划线创建空卡片。
@@ -112,12 +113,14 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 
 ## 安装
 
-1. 下载 [最新版 `margin-comments-0.11.2.xpi`](./releases/margin-comments-0.11.2.xpi?raw=1)。
+1. 下载 [最新版 `margin-comments-0.11.3.xpi`](./releases/margin-comments-0.11.3.xpi?raw=1)。
 2. 打开 **Zotero → 工具 → 插件**。
 3. 点击右上角齿轮，选择 **从文件安装插件**。
 4. 选择下载的 `.xpi` 文件，并按 Zotero 提示完成安装。
 
 首次试用建议使用单独的 Zotero 测试配置文件。历史安装包保存在 [`releases/`](./releases/) 目录中，可以随时回退。
+
+0.11.3 修复点击笔记进入编辑后光标回到开头的问题：文字按点击位置定位，公式按对应 LaTeX 原文定位。见 [0.11.3 更新说明](./docs/release-0.11.3.md)。
 
 0.11.2 新增笔记 `Tab` 缩进和 `Shift + Tab` 取消缩进，支持多行选区并保留保存后的首行空白。见 [0.11.2 更新说明](./docs/release-0.11.2.md)。
 
@@ -150,7 +153,7 @@ PDF 原批注  ─────  引线  ─────  页边评论卡片
 
 | 操作 | 效果 |
 | --- | --- |
-| 点击评论卡片 | 选中原批注并进入编辑 |
+| 点击评论卡片文字 | 选中原批注并在点击位置进入编辑 |
 | 停止输入 700 ms | 自动保存 |
 | `Ctrl/Cmd + Enter` | 立即保存 |
 | `Tab`（编辑中） | 光标处插入 4 个空格；有选区时缩进所选行 |
@@ -229,7 +232,7 @@ corepack pnpm run build
 corepack pnpm run verify:xpi
 ```
 
-构建结果位于 `build/margin-comments-0.11.2.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
+构建结果位于 `build/margin-comments-0.11.3.xpi`，同时会归档到 `releases/`。构建脚本不会删除历史版本。
 
 - [人工验收清单](./docs/manual-smoke-test.md)
 - [性能与压力测试](./docs/performance.md)

@@ -29,6 +29,7 @@ import { ImageAssets, copyImageBytes, type ImportedImage, type ImageCleanupResul
 import { renderAssetImage, openImageLightbox } from "./image-preview";
 import { captureEditorRange, insertImageText } from "./image-insertion";
 import { indentEditor } from "./editor-indentation";
+import { clickedSourceOffset, placeSourceCaret } from "./preview-caret";
 import {
   readStoredComment,
   renderStoredComment,
@@ -646,7 +647,13 @@ export class ReaderSession {
       this.setActive(runtime.annotation.key);
       this.adapter.selectAnnotation(runtime.annotation.key);
     });
+    let clickedOffset: number | undefined;
+    preview.addEventListener("pointerdown", (event) => {
+      clickedOffset = event.button === 0 ? clickedSourceOffset(preview, event) : undefined;
+    });
     preview.addEventListener("click", (event) => {
+      const offset = event.detail > 0 ? clickedOffset ?? clickedSourceOffset(preview, event) : undefined;
+      clickedOffset = undefined;
       if (this.openClickedImage(event, preview)) return;
       const link = (event.target as Element).closest?.("a[href]");
       if (link && preview.contains(link)) {
@@ -655,7 +662,7 @@ export class ReaderSession {
         (Zotero as any).launchURL?.(link.getAttribute("href"));
         return;
       }
-      if (!runtime.annotation.readOnly) this.openEditor(runtime);
+      if (!runtime.annotation.readOnly) this.openEditor(runtime, false, offset);
     });
     preview.addEventListener("keydown", (event) => {
       if (event.target !== preview) return;
@@ -1124,7 +1131,7 @@ export class ReaderSession {
     runtime.editor.blur();
   }
 
-  private openEditor(runtime: CardRuntime, selectAll = false): void {
+  private openEditor(runtime: CardRuntime, selectAll = false, sourceOffset?: number): void {
     if (runtime.annotation.readOnly) return;
     runtime.cleanupHold ??= this.images.holdCleanup();
     if (!runtime.card.classList.contains("zmc-editing")) {
@@ -1140,6 +1147,7 @@ export class ReaderSession {
     if (mounted) this.layoutPage(mounted);
     runtime.editor.focus({ preventScroll: true });
     if (selectAll) selectEditorContents(runtime.editor);
+    else if (sourceOffset !== undefined) placeSourceCaret(runtime.editor, runtime.currentValue, sourceOffset);
   }
 
   private closeEditor(runtime: CardRuntime, pageIndex: number): void {

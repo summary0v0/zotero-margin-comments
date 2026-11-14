@@ -3,7 +3,7 @@ interface Point { node: Node; offset: number }
 interface Edit { start: number; end: number; text: string }
 
 /** Map source lines across text nodes, inline formatting, BRs and native DIV lines. */
-function editorText(editor: HTMLElement): { text: string; points: Point[] } {
+export function editorText(editor: HTMLElement): { text: string; points: Point[] } {
   let text = "";
   const points: Point[] = [{ node: editor, offset: 0 }];
   const visit = (parent: Node) => {

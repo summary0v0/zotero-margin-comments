@@ -13,11 +13,12 @@ const sideTest = process.argv.includes("--sides");
 const imageTest = process.argv.includes("--images");
 const zoomTest = process.argv.includes("--zoom");
 const indentTest = process.argv.includes("--indent");
+const caretTest = process.argv.includes("--caret");
 const nativeClipboard = process.argv.includes("--native-clipboard");
 if (!executable || !inputPDF || !fs.existsSync(executable) || !fs.existsSync(inputPDF)) {
   throw new Error("Usage: node scripts/verify-zotero-runtime.mjs <zotero.exe> <PLLaVA PDF>");
 }
-const out = path.join(root, indentTest ? "build/zotero-indent-qa" : zoomTest ? "build/zotero-zoom-qa" : imageTest ? "build/zotero-images-qa" : sideTest ? "build/zotero-sides-qa" : "build/zotero-runtime-qa");
+const out = path.join(root, caretTest ? "build/zotero-caret-qa" : indentTest ? "build/zotero-indent-qa" : zoomTest ? "build/zotero-zoom-qa" : imageTest ? "build/zotero-images-qa" : sideTest ? "build/zotero-sides-qa" : "build/zotero-runtime-qa");
 const profile = path.join(out, "profile");
 const dataDirectory = path.join(out, "data");
 const addon = path.join(out, "test-addon");
@@ -51,10 +52,12 @@ fs.writeFileSync(path.join(addon, "bootstrap.js"), bootstrap
   .replace("__ZMC_QA_IMAGES__", JSON.stringify(imageTest))
   .replace("__ZMC_QA_ZOOM__", JSON.stringify(zoomTest))
   .replace("__ZMC_QA_INDENT__", JSON.stringify(indentTest))
+  .replace("__ZMC_QA_CARET__", JSON.stringify(caretTest))
   + (sideTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-sides-runtime.js"), "utf8") : "")
   + (imageTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-images-runtime.js"), "utf8") : "")
   + (zoomTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-zoom-runtime.js"), "utf8") : "")
-  + (indentTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-indent-runtime.js"), "utf8") : ""));
+  + (indentTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-indent-runtime.js"), "utf8") : "")
+  + (caretTest ? "\n" + fs.readFileSync(path.join(root, "bench/zotero-caret-runtime.js"), "utf8") : ""));
 const testXpi = path.join(out, "test-addon.xpi");
 if (fs.existsSync(testXpi)) fs.unlinkSync(testXpi);
 const quotePS = (value) => `'${value.replaceAll("'", "''")}'`;

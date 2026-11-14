@@ -459,12 +459,20 @@ describe("ReaderSession", () => {
     const preview = document.querySelector<HTMLDivElement>(
       '[data-annotation-key="COMMENT1"] .zmc-card-preview',
     )!;
-    preview.click();
+    const previewText = preview.querySelector("p")!.firstChild!;
+    Object.defineProperty(document, "caretPositionFromPoint", {
+      configurable: true, value: () => ({ offsetNode: previewText, offset: 3 }),
+    });
+    preview.dispatchEvent(new MouseEvent("pointerdown", { button: 0, clientX: 20, clientY: 30, bubbles: true }));
+    preview.dispatchEvent(new MouseEvent("click", { detail: 1, clientX: 20, clientY: 30, bubbles: true }));
+    delete (document as any).caretPositionFromPoint;
     const editor = document.querySelector<HTMLElement>(
       '[data-annotation-key="COMMENT1"] .zmc-card-editor',
     )!;
     expect(editor.classList.contains("zmc-editor-hidden")).toBe(false);
     expect(editor.getAttribute("contenteditable")).toBe("true");
+    expect(document.getSelection()!.getRangeAt(0).startContainer).toBe(editor.firstChild);
+    expect(document.getSelection()!.getRangeAt(0).startOffset).toBe(3);
     const navigateCallsBeforeEditorPointer = reader.navigate.mock.calls.length;
     const selection = document.getSelection()!;
     const range = document.createRange();
