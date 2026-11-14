@@ -68,4 +68,22 @@ describe("AnnotationStore", () => {
     expect(() => store.listAllComments(7)).toThrow("全部批注");
   });
 
+  it.each(["    首行\n末行  ", "\t文本\n", "    ", "&#32;原文&#32;", "&#38;", "文本&#32;  ", "  <b>格式</b>  "])(
+    "preserves source whitespace through Zotero's trimming setter: %j", async (source) => {
+      let stored = "";
+      const item = {
+        id: 1, key: "NOTE0001", annotationType: "note",
+        annotationPosition: '{"pageIndex":0,"rects":[[1,2,3,4]]}',
+        isAnnotation: () => true, isEditable: () => true, saveTx: vi.fn(),
+        get annotationComment() { return stored; },
+        set annotationComment(value: string) { stored = value.trim().normalize(); },
+      };
+      vi.stubGlobal("Zotero", { Items: { get: (id: number) => id === 1 ? item : { getAnnotations: () => [item] } } });
+      const store = new AnnotationStore();
+      await store.saveComment(1, source);
+      expect(store.list(2)[0].comment).toBe(source);
+      expect(item.saveTx).toHaveBeenCalledOnce();
+    },
+  );
+
 });

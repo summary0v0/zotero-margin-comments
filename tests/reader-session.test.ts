@@ -499,6 +499,40 @@ describe("ReaderSession", () => {
       selectedText,
     );
     expect(execCommand).not.toHaveBeenCalledWith("copy", false, null);
+    // Tab stays inside the note, updates the draft and survives autosave/reopen.
+    execCommand.mockReturnValue(false);
+    editor.textContent = "缩进笔记";
+    range.setStart(editor.firstChild!, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const tab = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    const readerKey = vi.fn();
+    document.addEventListener("keydown", readerKey);
+    editor.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(readerKey).not.toHaveBeenCalled();
+    expect(editor.textContent).toBe("    缩进笔记");
+    expect(document.activeElement).toBe(editor);
+    await vi.advanceTimersByTimeAsync(720);
+    expect(store.saveComment).toHaveBeenLastCalledWith(21, "    缩进笔记");
+    editor.blur();
+    await vi.advanceTimersByTimeAsync(50);
+    preview.click();
+    expect(editor.textContent).toBe("    缩进笔记");
+    range.selectNodeContents(editor);
+    range.collapse(false);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", shiftKey: true, bubbles: true, cancelable: true }));
+    expect(editor.textContent).toBe("缩进笔记");
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(editor.textContent).toBe("    缩进笔记");
+    preview.click();
+    const navigationTab = new KeyboardEvent("keydown", { key: "Tab", ctrlKey: true, bubbles: true, cancelable: true });
+    editor.dispatchEvent(navigationTab);
+    expect(navigationTab.defaultPrevented).toBe(false);
+    document.removeEventListener("keydown", readerKey);
     editor.textContent = "修改后的解释";
     editor.dispatchEvent(new Event("input", { bubbles: true }));
     editor.dispatchEvent(

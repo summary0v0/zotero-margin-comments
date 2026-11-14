@@ -140,7 +140,8 @@ export function readStoredComment(root: HTMLElement): string {
   cleanEditorDom(root);
   const renderer = root.cloneNode(true) as HTMLElement;
   unformatElements(renderer);
-  return innerText(renderer).replace(/\n<\//g, "</").trim();
+  // Leading indentation and trailing Markdown hard breaks are source content.
+  return innerText(renderer).replace(/\n<\//g, "</");
 }
 
 export function selectEditorContents(root: HTMLElement): void {

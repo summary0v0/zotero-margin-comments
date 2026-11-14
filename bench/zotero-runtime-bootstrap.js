@@ -168,6 +168,9 @@ async function startup() {
     if (__ZMC_QA_ZOOM__) {
       await verifyCommentZoom({ annotation, session, adapter, application, reader, scope, result, root });
     }
+    if (__ZMC_QA_INDENT__) {
+      session = await verifyCommentIndent({ annotation, session, adapter, reader, scope, result });
+    }
     try {
       adapter.centerCurrentPageHorizontally();
       await new Promise((resolve) => setTimeout(resolve, 200));

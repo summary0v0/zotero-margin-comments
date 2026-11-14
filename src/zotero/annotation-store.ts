@@ -30,7 +30,11 @@ export class AnnotationStore {
       throw new Error("此批注为只读，无法编辑");
     }
 
-    item.annotationComment = value;
+    // Zotero's annotation setter trims whitespace. HTML character references
+    // retain it through that setter and render as whitespace in native Reader.
+    // Escape literal ampersands first so source references round-trip once.
+    item.annotationComment = value.replace(/&/g, "&#38;").replace(/^\s+|\s+$/g,
+      (boundary) => Array.from(boundary, (char) => `&#${char.codePointAt(0)};`).join(""));
     await item.saveTx();
   }
 
@@ -45,13 +49,23 @@ export class AnnotationStore {
       itemID: Number(item.id),
       key: String(item.key),
       type: item.annotationType,
-      comment: String(item.annotationComment ?? ""),
+      comment: decodeCommentWhitespace(String(item.annotationComment ?? "")),
       color: normalizeColor(item.annotationColor),
       pageLabel: String(item.annotationPageLabel ?? position.pageIndex + 1),
       position,
       readOnly: item.isEditable?.() === false,
     };
   }
+}
+
+function decodeCommentWhitespace(value: string): string {
+  return value.replace(/^(?:&#\d{1,6};)+|(?:&#\d{1,6};)+$/g, (boundary) =>
+    boundary.replace(/&#(\d+);/g, (entity, code) => {
+      const number = Number(code);
+      if (number > 0x10ffff) return entity;
+      const char = String.fromCodePoint(number);
+      return /^\s$/.test(char) ? char : entity;
+    })).replace(/&#38;/g, "&");
 }
 
 function normalizeColor(value: unknown): string {

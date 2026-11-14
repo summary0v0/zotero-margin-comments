@@ -28,6 +28,7 @@ import { renderCommentImages, renderMarkdownComment } from "./markdown-preview";
 import { ImageAssets, copyImageBytes, type ImportedImage, type ImageCleanupResult } from "./image-assets";
 import { renderAssetImage, openImageLightbox } from "./image-preview";
 import { captureEditorRange, insertImageText } from "./image-insertion";
+import { indentEditor } from "./editor-indentation";
 import {
   readStoredComment,
   renderStoredComment,
@@ -763,6 +764,13 @@ export class ReaderSession {
       this.queueSave(runtime);
     });
     editor.addEventListener("keydown", (event) => {
+      if (event.key === "Tab" && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) {
+        if (runtime.annotation.readOnly) return;
+        event.preventDefault();
+        event.stopPropagation();
+        indentEditor(editor, event.shiftKey);
+        return;
+      }
       const modifier = (event.ctrlKey || event.metaKey) && !event.shiftKey && !event.altKey;
       const key = event.key.toLowerCase();
       const formatCommand = event.key.toLowerCase() === "b"
